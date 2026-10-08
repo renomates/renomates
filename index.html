@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Renomates | Real renovation costs from your neighbours</title>
+<meta name="description" content="Connect with locals who have renovated in your area. See what it cost, who the best trades were and how the council was to deal with.">
+<meta name="theme-color" content="#ffd84d">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="canonical" href="https://renomates.co/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Renomates">
+<meta property="og:title" content="Renomates | Real renovation costs from your neighbours">
+<meta property="og:description" content="See what renos really cost, who the best trades were and how the council was to deal with.">
+<meta property="og:url" content="https://renomates.co/">
+<meta property="og:image" content="https://renomates.co/assets/og-image.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://renomates.co/assets/og-image.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header>
+  <a class="logo" href="./" aria-label="Renomates home"><img class="lg" src="assets/logo.svg" alt="" width="35" height="36">Renomates</a>
+  <div class="sp"></div>
+  <button class="btn alt nb" id="favBtn" aria-label="Saved renos" hidden>♥<span class="lbl"> Saved</span><b id="favN" hidden></b></button>
+  <button class="btn alt nb" id="msgBtn" aria-label="Messages" hidden>✉<span class="lbl"> Messages</span><b id="msgN" hidden></b></button>
+  <button class="btn" id="shareBtn">Share<span class="lbl"> your reno</span></button>
+  <button class="av" id="meBtn" aria-label="Sign in or open your profile">?</button>
+</header>
+
+<div class="hero">
+  <h1>Ask the neighbours who've already done it.</h1>
+  <p>Real costs, trades worth hiring, and what the council was actually like, from people who renovated near you.</p>
+</div>
+
+<div class="bar">
+  <div class="field-wrap search-sub">
+    <input id="subQ" class="pill-input" placeholder="Suburb or postcode, anywhere in Australia" autocomplete="off" aria-label="Suburb or postcode">
+    <button class="clr" id="subClr" hidden aria-label="Clear suburb">✕</button>
+    <ul class="ac" id="subAc" role="listbox" hidden></ul>
+  </div>
+  <input id="q" class="pill-input" placeholder="Search tradie, story or type" aria-label="Search text">
+  <select id="sort" aria-label="Sort">
+    <option value="new">Newest</option><option value="lo">Cost: low to high</option>
+    <option value="hi">Cost: high to low</option>
+  </select>
+  <label class="range"><span>Up to <b id="maxV"></b></span>
+    <input type="range" id="max" min="10" max="500" step="10" value="500" aria-label="Maximum cost in thousands of dollars"></label>
+  <div class="seg" id="seg"><button id="vList" aria-pressed="true">List</button><button id="vMap" aria-pressed="false">Map</button></div>
+</div>
+<div class="bar"><div class="chips" id="chips"></div></div>
+
+<main class="main" id="main">
+  <section class="lw"><p class="count" id="count" aria-live="polite"></p><div class="list" id="list"></div></section>
+  <section class="mapw"><div id="map" aria-label="Map of renovations"></div></section>
+</main>
+
+<footer class="foot">
+  <p class="flogo"><img class="lg" src="assets/logo.svg" alt="" width="27" height="28"> <b>Renomates</b></p>
+  <p>Costs and reviews are self-reported by members and are not verified. Suburb only, never street addresses. Renomates is not affiliated with any tradie or council.</p>
+</footer>
+
+<div id="modal"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
