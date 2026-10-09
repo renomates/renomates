@@ -12,7 +12,7 @@ const configured = C.SUPABASE_URL && C.SUPABASE_ANON_KEY && !C.SUPABASE_URL.incl
 const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY) : null;
 
 const S = {user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
-  F:{sub:null, q:'', types:new Set(), max:500, sort:'new'}};
+  F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false}};
 try { S.seen = JSON.parse(localStorage.getItem('rm_seen') || '{}'); } catch (e) {}
 
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
@@ -74,7 +74,7 @@ async function loadRenos() {
   const m = location.hash.match(/^#r=([0-9a-f-]{36})$/); if (m && S.renos.find(r => r.id === m[1])) openReno(m[1]);
 }
 async function loadMine() {
-  if (!S.user) { S.favs = new Set(); S.convos = []; updateNav(); return; }
+  if (!S.user) { S.favs = new Set(); S.convos = []; updateNav(); render(); return; }
   const [p, f] = await Promise.all([
     sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle(),
     sb.from('favourites').select('reno_id')]);
@@ -92,7 +92,8 @@ async function loadConvos() {
 const unread = c => { const m = c.messages[0]; return m.sender_id !== S.user.id && new Date(m.created_at) > new Date(S.seen[c.id] || 0); };
 function updateNav() {
   const on = !!S.user;
-  $('#favBtn').hidden = !on; $('#msgBtn').hidden = !on;
+  $('#favBtn').hidden = !on; $('#msgBtn').hidden = !on; $('#mineChip').hidden = !on;
+  if (!on && S.F.mine) { S.F.mine = false; $('#mineChip').setAttribute('aria-pressed', 'false'); }
   $('#favN').textContent = S.favs.size; $('#favN').hidden = !S.favs.size;
   const u = on ? S.convos.filter(unread).length : 0; $('#msgN').textContent = u; $('#msgN').hidden = !u;
   $('#meBtn').textContent = on ? ((S.profile && S.profile.name) || S.user.email || '?')[0].toUpperCase() : '?';
@@ -101,7 +102,7 @@ function updateNav() {
 /* ---------- browse ---------- */
 function filtered() {
   const F = S.F, q = F.q.toLowerCase();
-  const r = S.renos.filter(d => (!F.sub || (d.suburb === F.sub.name && d.state === F.sub.state)) && (!F.types.size || d.types.some(t => F.types.has(t))) &&
+  const r = S.renos.filter(d => (!F.mine || (S.user && d.user_id === S.user.id)) && (!F.sub || (d.suburb === F.sub.name && d.state === F.sub.state)) && (!F.types.size || d.types.some(t => F.types.has(t))) &&
     (F.max >= 500 || d.cost <= F.max * 1000) &&
     (!q || [d.title, d.story, d.label, d.type, d.suburb, d.owner, ...(d.trades || []).map(t => t.name + ' ' + t.trade)].join(' ').toLowerCase().includes(q)));
   const s = {new: (a, b) => b.created_at.localeCompare(a.created_at), lo: (a, b) => a.cost - b.cost, hi: (a, b) => b.cost - a.cost}[F.sort];
@@ -139,7 +140,7 @@ function setSel(id) {
 function render(fit) {
   if (!configured) { $('#list').innerHTML = `<div class="empty"><div style="font-size:42px">🔧</div><h3>Almost there</h3><p class="sub">Add your Supabase details to js/config.js. The README walks you through it.</p></div>`; return; }
   $('#maxV').textContent = S.F.max >= 500 ? '$500k+' : '$' + S.F.max + 'k';
-  const r = filtered(), where = S.F.sub ? ' in ' + S.F.sub.name : ' across Australia';
+  const r = filtered(), where = S.F.mine ? ' from you' : S.F.sub ? ' in ' + S.F.sub.name : ' across Australia';
   $('#count').textContent = r.length + (r.length === 1 ? ' reno' : ' renos') + where;
   $('#list').innerHTML = r.length ? r.map(card).join('') : (S.renos.length
     ? '<div class="empty"><div style="font-size:42px">🪚</div><h3>No renos match</h3><p class="sub">Try a higher budget or clear a filter.</p></div>'
@@ -372,10 +373,12 @@ function formModal(ex) {
     const row = {title: v('#t'), suburb: sub.name, state: sub.state, postcode: sub.pc, lat: sub.lat, lng: sub.lng, type: TYPES.find(t => T.has(t)), types: TYPES.filter(t => T.has(t)), other_type: T.has('Other') ? v('#ot') : null,
       cost, months, council_days: cd, council_notes: v('#cn'), story: v('#st'), breakdown, trades};
     const btn = g('#sv'); btn.disabled = true; btn.textContent = 'Saving...';
-    try { await saveReno(ex, row, P, orig, n => btn.textContent = `Uploading photo ${n} of ${P.filter(p => p.blob).length}...`); }
-    catch (x) { btn.disabled = false; btn.textContent = ex ? 'Save changes' : 'Publish reno'; return err.textContent = x.message || 'Something went wrong. Please try again.'; }
+    let newId;
+    try { newId = await saveReno(ex, row, P, orig, n => btn.textContent = `Uploading photo ${n} of ${P.filter(p => p.blob).length}...`); }
+    catch (x) { if (x.saved) loadRenos(); btn.disabled = false; btn.textContent = ex ? 'Save changes' : 'Publish reno'; return err.textContent = x.message || 'Something went wrong. Please try again.'; }
     try { localStorage.removeItem(DRAFT); } catch (x) {}
     $('#modal').innerHTML = ''; toast(ex ? 'Changes saved' : 'Published. Thanks for sharing!'); await loadRenos();
+    if (!ex) { resetFilters(); render(true); } if (newId) openReno(newId);
   };
 }
 async function saveReno(ex, row, P, orig, progress) {
@@ -396,13 +399,19 @@ async function saveReno(ex, row, P, orig, progress) {
     const ins = await sb.from('reno_photos').insert({reno_id: id, path: base + '.jpg', caption: p.caption || '', position: i});
     if (ins.error) failed++;
   }
-  if (failed) throw new Error(`Your reno saved, but ${failed} photo(s) failed to upload. Open Edit on your reno to add them again.`);
+  if (failed) { const e = new Error(`Your reno saved, but ${failed} photo(s) failed to upload. Open My renos, choose Edit and add them again.`); e.saved = true; throw e; }
+  return id;
 }
 
 /* ---------- wiring ---------- */
+function resetFilters() {
+  S.F = {sub: null, q: '', types: new Set(), max: 500, sort: 'new', mine: false};
+  $('#subQ').value = ''; $('#subClr').hidden = true; $('#q').value = ''; $('#max').value = 500; $('#sort').value = 'new';
+  document.querySelectorAll('#chips .chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
+}
 function init() {
-  $('#chips').innerHTML = TYPES.map(t => `<button class="chip" aria-pressed="false" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('');
-  $('#chips').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; const t = b.dataset.t; S.F.types.has(t) ? S.F.types.delete(t) : S.F.types.add(t); b.setAttribute('aria-pressed', S.F.types.has(t)); render(true); };
+  $('#chips').innerHTML = '<button class="chip" id="mineChip" aria-pressed="false" data-mine="1" hidden>🏠 My renos</button>' + TYPES.map(t => `<button class="chip" aria-pressed="false" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('');
+  $('#chips').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; if (b.dataset.mine) { S.F.mine = !S.F.mine; b.setAttribute('aria-pressed', S.F.mine); return render(true); } const t = b.dataset.t; S.F.types.has(t) ? S.F.types.delete(t) : S.F.types.add(t); b.setAttribute('aria-pressed', S.F.types.has(t)); render(true); };
   let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.F.q = e.target.value.trim(); render(true); }, 200); };
   $('#sort').onchange = e => { S.F.sort = e.target.value; render(); };
   $('#max').oninput = e => { S.F.max = +e.target.value; render(true); };
