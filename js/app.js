@@ -11,6 +11,8 @@ const MAXPHOTOS = 10, BUCKET = 'reno-photos';
 const configured = C.SUPABASE_URL && C.SUPABASE_ANON_KEY && !C.SUPABASE_URL.includes('YOUR-PROJECT');
 const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY) : null;
 
+const DEBUG = /[?&]debug=1/.test(location.search);
+let diag = 'not loaded yet';
 const S = {user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
   F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false}};
 try { S.seen = JSON.parse(localStorage.getItem('rm_seen') || '{}'); } catch (e) {}
@@ -68,9 +70,13 @@ function norm(r) {
     photos: ph.map(p => ({id: p.id, path: p.path, caption: p.caption, url: photoUrl(p.path), thumb: photoUrl(thumbPath(p.path))}))};
 }
 async function loadRenos() {
-  const {data, error} = await sb.from('renos').select('*, profiles(name,instagram), reno_photos(id,path,caption,position)').order('created_at', {ascending: false}).limit(500);
+  const {data, error} = await sb.from('renos').select('*, profiles!user_id(name,instagram), reno_photos(id,path,caption,position)').order('created_at', {ascending: false}).limit(500);
+  if (error) diag = 'QUERY ERROR: ' + (error.message || JSON.stringify(error));
   if (error) { $('#list').innerHTML = `<div class="empty"><h3>Could not load renos</h3><p class="sub">${esc(error.message)}</p></div>`; return; }
-  S.renos = data.map(norm); render(true);
+  S.renos = data.flatMap(r => { try { return [norm(r)]; } catch (e) { console.error('Could not read reno', r.id, e); return []; } });
+  diag = 'database returned ' + data.length + ' row(s), readable ' + S.renos.length + ', signed in ' + !!S.user;
+  if (S.renos.length < data.length) toast((data.length - S.renos.length) + ' reno(s) could not be displayed');
+  render(true);
   const m = location.hash.match(/^#r=([0-9a-f-]{36})$/); if (m && S.renos.find(r => r.id === m[1])) openReno(m[1]);
 }
 async function loadMine() {
@@ -141,11 +147,11 @@ function render(fit) {
   if (!configured) { $('#list').innerHTML = `<div class="empty"><div style="font-size:42px">🔧</div><h3>Almost there</h3><p class="sub">Add your Supabase details to js/config.js. The README walks you through it.</p></div>`; return; }
   $('#maxV').textContent = S.F.max >= 500 ? '$500k+' : '$' + S.F.max + 'k';
   const r = filtered(), where = S.F.mine ? ' from you' : S.F.sub ? ' in ' + S.F.sub.name : ' across Australia';
-  $('#count').textContent = r.length + (r.length === 1 ? ' reno' : ' renos') + where;
+  $('#count').textContent = r.length + (r.length === 1 ? ' reno' : ' renos') + where + (DEBUG ? ' [DEBUG: ' + diag + '; after filters ' + r.length + '; project ' + (C.SUPABASE_URL || '').replace('https://', '') + ']' : '');
   $('#list').innerHTML = r.length ? r.map(card).join('') : (S.renos.length
     ? '<div class="empty"><div style="font-size:42px">🪚</div><h3>No renos match</h3><p class="sub">Try a higher budget or clear a filter.</p></div>'
     : '<div class="empty"><img class="lg" src="assets/logo.svg" width="62" height="64" alt=""><h3>No renos here yet</h3><p class="sub">Be the first to share yours!</p><button class="btn" data-act="share">Share your reno</button></div>');
-  drawMap(r, fit !== false && fit !== undefined ? true : false);
+  try { drawMap(r, fit !== false && fit !== undefined ? true : false); } catch (e) { console.error('Map error', e); }
 }
 
 /* ---------- modal helpers ---------- */
