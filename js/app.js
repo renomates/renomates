@@ -157,7 +157,7 @@ function render(fit) {
 /* ---------- modal helpers ---------- */
 function shell(html, onClose, guard) {
   const m = $('#modal');
-  m.innerHTML = `<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="xbar"><button class="x" aria-label="Close">✕</button></div>${html}</div></div>`;
+  m.innerHTML = `<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1" style="outline:none"><div class="xbar" style="position:sticky;top:0;height:0;z-index:20"><button class="x" aria-label="Close" style="position:absolute;right:14px;top:14px;width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.96);color:#1d1b3a;font-size:18px;line-height:1;box-shadow:0 2px 10px rgba(0,0,0,.28);cursor:pointer;padding:0">✕</button></div>${html}</div></div>`;
   const close = () => { m.innerHTML = ''; S.curThread = null; if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search); onClose && onClose(); };
   $('#ov').onclick = e => { if (e.target.closest('.x')) { if (guard && !guard()) return; close(); } else if (e.target.id === 'ov' && !guard) close(); };
   m.querySelector('.sheet').focus();
