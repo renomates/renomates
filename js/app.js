@@ -157,14 +157,14 @@ function render(fit) {
 /* ---------- modal helpers ---------- */
 function shell(html, onClose, guard) {
   const m = $('#modal');
-  m.innerHTML = `<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1">${html}</div></div>`;
+  m.innerHTML = `<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><div class="xbar"><button class="x" aria-label="Close">✕</button></div>${html}</div></div>`;
   const close = () => { m.innerHTML = ''; S.curThread = null; if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search); onClose && onClose(); };
   $('#ov').onclick = e => { if (e.target.closest('.x')) { if (guard && !guard()) return; close(); } else if (e.target.id === 'ov' && !guard) close(); };
   m.querySelector('.sheet').focus();
   return m.querySelector('.sheet');
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { const lb = $('.lb'); if (lb) lb.remove(); else { const x = $('#modal .x'); if (x) x.click(); } } });
-const head = (title, sub, grad) => `<div class="sh" style="background:linear-gradient(145deg,${grad || 'var(--sun),var(--coral)'})"><button class="x" aria-label="Close">✕</button><h2>${title}</h2>${sub ? `<p style="margin:4px 0 0">${sub}</p>` : ''}</div>`;
+const head = (title, sub, grad) => `<div class="sh" style="background:linear-gradient(145deg,${grad || 'var(--sun),var(--coral)'})"><h2>${title}</h2>${sub ? `<p style="margin:4px 0 0">${sub}</p>` : ''}</div>`;
 
 /* ---------- auth + profile ---------- */
 function authModal(mode, msg) {
@@ -234,7 +234,7 @@ function openReno(id) {
   history.replaceState(null, '', '#r=' + id);
   const c = COL[d.type] || COL.Other, mine = S.user && d.user_id === S.user.id, mx = Math.max(1, ...(d.breakdown || []).map(b => b.amount));
   const first = (d.owner || '').split(' ')[0] || 'them';
-  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><button class="x" aria-label="Close">✕</button><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div class="disp" style="font-size:40px;font-weight:800;margin-top:6px">${k(d.cost)} <span style="font-size:16px;font-weight:600">over ${d.months} months</span></div></div>
+  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div class="disp" style="font-size:40px;font-weight:800;margin-top:6px">${k(d.cost)} <span style="font-size:16px;font-weight:600">over ${d.months} months</span></div></div>
   ${d.photos.length ? `<div class="gal"><img class="main-img" id="mi" src="${d.photos[0].url}" alt="${esc(d.photos[0].caption || d.title)}"><div class="thumbs">${d.photos.map((p, i) => `<img src="${p.thumb}" data-i="${i}" class="${i ? '' : 'on'}" alt="${esc(p.caption || 'Photo ' + (i + 1))}">`).join('')}</div><p class="hint" id="cap">${esc(d.photos[0].caption)}</p></div>` : ''}
   <div class="bd"><div class="who"><span class="av" style="display:grid;place-items:center">${esc(d.owner[0] || '?')}</span><div><b>${esc(d.owner)}</b><div class="sub">Renovated in ${esc(d.suburb)}</div></div>${d.ig ? `<a href="https://instagram.com/${esc(d.ig)}" target="_blank" rel="noopener" class="tag" style="margin-left:auto;text-decoration:none;color:inherit">📷 @${esc(d.ig)}</a>` : ''}</div>
   <h3>The story</h3><p style="margin:0;white-space:pre-wrap">${esc(d.story)}</p>
@@ -324,7 +324,9 @@ function formModal(ex) {
   let P = ex ? ex.photos.map(p => ({...p})) : [];
   const orig = ex ? ex.photos.map(p => ({...p})) : [];
   const bk = (ex && ex.breakdown) || [], tr = (ex && ex.trades) || [];
-  const rows = n => Array.from({length: n}, (_, i) => i);
+  const bkRow = b => `<div class="row"><input class="bl" maxlength="30" placeholder="e.g. Cabinetry" value="${esc(b && b.label)}"><input class="ba" type="number" min="0" inputmode="numeric" placeholder="$" value="${b && b.amount ? b.amount : ''}"></div>`;
+  const trRow = t => `<div class="row3"><input class="tn" maxlength="50" placeholder="Name or business" value="${esc(t && t.name)}"><input class="tt" maxlength="30" placeholder="Trade" value="${esc(t && t.trade)}"><select class="tr">${[5, 4, 3, 2, 1].map(n => `<option value="${n}" ${t && t.rating === n ? 'selected' : ''}>${n}★</option>`).join('')}</select></div>`;
+  const MAXBK = 15, MAXTR = 10;
   const sh = shell(head(ex ? 'Edit your reno' : 'Share your reno', 'Help the next neighbour budget with confidence.', 'var(--mint),var(--sun)') + `<div class="bd"><form id="sf" novalidate>
   <label class="l">Headline</label><input id="t" maxlength="120" required value="${esc(ex && ex.title)}" placeholder="e.g. Open-plan kitchen in a 1950s brick home">
   <label class="l">Suburb or postcode</label><div class="field-wrap"><input id="sq" autocomplete="off" placeholder="Start typing, then pick from the list" value="${ex ? esc(ex.suburb + ', ' + ex.state + ' ' + ex.postcode) : ''}"><ul class="ac" id="sa" role="listbox" hidden></ul></div>
@@ -333,8 +335,10 @@ function formModal(ex) {
   <div id="ow" ${T.has('Other') ? '' : 'hidden'}><label class="l">Describe your reno</label><input id="ot" maxlength="40" value="${esc(ex && ex.other_type)}" placeholder="e.g. Pool, Solar"></div>
   <div class="row"><div><label class="l">Total cost ($)</label><input id="c" type="number" min="1" inputmode="numeric" value="${ex ? ex.cost : ''}" placeholder="45000"></div>
   <div><label class="l">Months it took</label><input id="mo" type="number" min="1" inputmode="numeric" value="${ex ? ex.months : ''}" placeholder="3"></div></div>
-  <label class="l">Where the money went (optional)</label>${rows(5).map(i => `<div class="row"><input class="bl" maxlength="30" placeholder="e.g. Cabinetry" value="${esc(bk[i] && bk[i].label)}"><input class="ba" type="number" min="0" inputmode="numeric" placeholder="$" value="${bk[i] ? bk[i].amount : ''}"></div>`).join('')}
-  <label class="l">Best tradies (optional)</label>${rows(3).map(i => `<div class="row3"><input class="tn" maxlength="50" placeholder="Name or business" value="${esc(tr[i] && tr[i].name)}"><input class="tt" maxlength="30" placeholder="Trade" value="${esc(tr[i] && tr[i].trade)}"><select class="tr">${[5, 4, 3, 2, 1].map(n => `<option value="${n}" ${tr[i] && tr[i].rating === n ? 'selected' : ''}>${n}★</option>`).join('')}</select></div>`).join('')}
+  <label class="l">Where the money went (optional)</label><div id="bkRows">${Array.from({length: Math.max(5, bk.length)}, (_, i) => bkRow(bk[i])).join('')}</div>
+  <button type="button" class="btn alt sm" id="addBk">+ Add another line</button><p class="hint" id="bkSum"></p>
+  <label class="l">Best tradies (optional)</label><div id="trRows">${Array.from({length: Math.max(3, tr.length)}, (_, i) => trRow(tr[i])).join('')}</div>
+  <button type="button" class="btn alt sm" id="addTr">+ Add another tradie</button>
   <div class="row"><div><label class="l">Council approval (days, 0 if none)</label><input id="cd" type="number" min="0" inputmode="numeric" value="${ex ? ex.council_days : 0}"></div><div></div></div>
   <label class="l">Council notes (optional)</label><input id="cn" maxlength="600" value="${esc(ex && ex.council_notes)}" placeholder="What was it like?">
   <label class="l">Your story</label><textarea id="st" rows="4" maxlength="3000" placeholder="What would you tell a neighbour?">${esc(ex && ex.story)}</textarea>
@@ -346,11 +350,19 @@ function formModal(ex) {
   g('#tc').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; const t = b.dataset.t;
     if (T.has(t)) T.delete(t); else if (T.size >= 4) return toast('Up to 4 types'); else T.add(t);
     b.setAttribute('aria-pressed', T.has(t)); g('#ow').hidden = !T.has('Other'); dirty = true; saveDraft(); };
+  const grow = (box, html, max, btn, focus) => { if (box.children.length >= max) return; box.insertAdjacentHTML('beforeend', html); btn.hidden = box.children.length >= max; if (focus) box.lastElementChild.querySelector('input').focus(); };
+  g('#addBk').onclick = () => { grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'), true); dirty = true; };
+  g('#addTr').onclick = () => { grow(g('#trRows'), trRow(), MAXTR, g('#addTr'), true); dirty = true; };
+  const sumHint = () => { const t = [...sh.querySelectorAll('.ba')].reduce((a, i) => a + (parseInt(i.value, 10) || 0), 0), c = parseInt(g('#c').value, 10) || 0;
+    g('#bkSum').textContent = t ? `Lines add up to ${money(t)}` + (c && c !== t ? ` (total cost is ${money(c)})` : '') : ''; };
+  sh.addEventListener('input', sumHint); sumHint();
   const fields = () => [...sh.querySelectorAll('#sf input:not([type=file]):not([data-a]),#sf select,#sf textarea')];
-  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({v: fields().map(f => f.value), sub, T: [...T]})); } catch (x) {} };
+  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({v: fields().map(f => f.value), sub, T: [...T], nb: g('#bkRows').children.length, nt: g('#trRows').children.length})); } catch (x) {} };
   sh.addEventListener('input', () => { dirty = true; saveDraft(); });
   if (!ex) { try { const dr = JSON.parse(localStorage.getItem(DRAFT) || 'null');
-    if (dr && dr.v) { fields().forEach((f, i) => { if (dr.v[i] != null) f.value = dr.v[i]; }); sub = dr.sub; (dr.T || []).forEach(t => T.add(t));
+    if (dr && dr.v) { while (g('#bkRows').children.length < (dr.nb || 0) && g('#bkRows').children.length < MAXBK) grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'));
+      while (g('#trRows').children.length < (dr.nt || 0) && g('#trRows').children.length < MAXTR) grow(g('#trRows'), trRow(), MAXTR, g('#addTr'));
+      fields().forEach((f, i) => { if (dr.v[i] != null) f.value = dr.v[i]; }); sub = dr.sub; (dr.T || []).forEach(t => T.add(t));
       sh.querySelectorAll('#tc .chip').forEach(b => b.setAttribute('aria-pressed', T.has(b.dataset.t))); g('#ow').hidden = !T.has('Other'); toast('Restored your unfinished draft'); } } catch (x) {} }
   const draw = () => { g('#pc').textContent = P.length;
     g('#pg').innerHTML = P.map((p, i) => `<div class="ph ${i ? '' : 'cover-ph'}" data-i="${i}"><img src="${p.url}" alt=""><button class="rm" data-a="rm" aria-label="Remove photo">✕</button>${i ? '<button class="mc" data-a="cv">Make cover</button>' : '<button class="mc">Cover</button>'}<input data-a="cap" maxlength="100" placeholder="Caption" value="${esc(p.caption)}"></div>`).join(''); };
