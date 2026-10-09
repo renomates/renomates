@@ -18,7 +18,7 @@ header{position:sticky;top:0;z-index:1200;background:var(--bg);display:flex;alig
 .nb{position:relative}.nb b{position:absolute;top:-5px;right:-3px;background:var(--coral);color:#fff;border-radius:99px;font-size:11px;padding:1px 7px}
 .hero{padding:22px 20px 8px;max-width:1400px;margin:auto}
 .hero h1{font-size:clamp(28px,5vw,46px);line-height:1.05;font-weight:800}
-.hero p{color:var(--mute);margin:8px 0 0;max-width:560px}
+.hero p{color:var(--mute);margin:10px 0 0;max-width:680px;font-size:16px}
 .bar{max-width:1400px;margin:14px auto 0;padding:0 20px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .pill-input,select{background:var(--card);border:2px solid var(--line);border-radius:999px;padding:10px 16px;min-width:0}
 .pill-input{flex:1 1 220px;width:100%}.pill-input:focus{border-color:var(--coral);outline:0}
