@@ -1,7 +1,7 @@
 {
   "name": "Renomates",
   "short_name": "Renomates",
-  "description": "Real renovation costs, trades and council experiences from your neighbours.",
+  "description": "Renovating is easier when you’ve got mates. Real costs, trades and council stories from people who’ve renovated before you.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f6f4ff",
