@@ -84,9 +84,10 @@ async function loadMine() {
   const [p, f] = await Promise.all([
     sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle(),
     sb.from('favourites').select('reno_id')]);
-  S.profile = p.data || {id: S.user.id, name: '', suburb: '', bio: '', instagram: ''};
+  S.profile = p.data || {id: S.user.id, name: '', suburb: '', bio: '', instagram: '', email_notifications: true};
   S.favs = new Set((f.data || []).map(x => x.reno_id));
   await loadConvos(); render(); updateNav();
+  if (location.hash === '#messages') { history.replaceState(null, '', location.pathname + location.search); inboxModal(); }
 }
 async function loadConvos() {
   if (!S.user) return;
@@ -199,15 +200,48 @@ function profileModal(msg) {
   <label class="l">About you</label><textarea id="pb" rows="3" maxlength="300">${esc(p.bio)}</textarea>
   <label class="l">Instagram handle (optional)</label><input id="pi" maxlength="30" value="${esc(p.instagram)}" placeholder="yourhandle">
   <p class="hint">Adds a link to your listings. Photos can't be imported from Instagram, so upload them directly.</p>
+  <label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:14px;font-weight:500"><input type="checkbox" id="pe" ${p.email_notifications === false ? '' : 'checked'} style="width:auto;margin-top:3px;padding:0"><span>Email me when I get a new message<br><small style="color:var(--mute);font-weight:400">We send at most one email every 30 minutes per conversation, and never include the message itself.</small></span></label>
   <button class="btn" style="width:100%;margin-top:14px">Save profile</button></form>
-  <p class="sub" style="margin-top:14px">Signed in as ${esc(S.user.email)} · <button class="link" id="so">Sign out</button></p></div>`, null, () => true);
+  <p class="sub" style="margin-top:14px">Signed in as ${esc(S.user.email)} · <button class="link" id="so">Sign out</button></p>
+  <p class="sub" style="margin-top:6px"><button class="link" id="del" style="color:#d33">Delete my account</button></p></div>`, null, () => true);
+  sh.querySelector('#del').onclick = deleteAccountModal;
   sh.querySelector('#so').onclick = async () => { await sb.auth.signOut(); $('#modal').innerHTML = ''; toast('Signed out'); };
   sh.querySelector('#pf').onsubmit = async e => {
     e.preventDefault();
-    const row = {id: S.user.id, name: $('#pn').value.trim(), suburb: $('#ps').value.trim(), bio: $('#pb').value.trim(), instagram: $('#pi').value.replace(/[^A-Za-z0-9._]/g, '').slice(0, 30)};
-    const {error} = await sb.from('profiles').upsert(row); if (error) return toast('Could not save: ' + error.message);
+    const row = {id: S.user.id, name: $('#pn').value.trim(), suburb: $('#ps').value.trim(), bio: $('#pb').value.trim(), instagram: $('#pi').value.replace(/[^A-Za-z0-9._]/g, '').slice(0, 30), email_notifications: $('#pe').checked};
+    let {error} = await sb.from('profiles').upsert(row);
+    if (error && /email_notifications/.test(error.message)) { const r2 = {...row}; delete r2.email_notifications; ({error} = await sb.from('profiles').upsert(r2)); }
+    if (error) return toast('Could not save: ' + error.message);
     S.profile = row; updateNav(); $('#modal').innerHTML = ''; toast('Profile saved'); loadRenos();
   };
+}
+function deleteAccountModal() {
+  const mine = S.renos.filter(r => r.user_id === S.user.id);
+  const sh = shell(head('Delete your account', 'This can’t be undone.', 'var(--coral),var(--sun)') + `<div class="bd"><form id="df">
+  <p style="margin-top:18px">This will permanently delete:</p>
+  <ul><li>your profile and sign-in</li><li>your ${mine.length} ${mine.length === 1 ? 'reno' : 'renos'} and all their photos</li><li>your saved renos</li><li>your messages and conversations</li></ul>
+  <p class="hint">Copies other people have already saved or shared can’t be recalled. Backups are removed as they expire.</p>
+  <label class="l">Type DELETE to confirm</label><input id="dc" autocomplete="off" autocapitalize="characters" placeholder="DELETE">
+  <p class="err" id="derr" role="alert"></p>
+  <button class="btn danger" id="dgo" style="width:100%;margin-top:12px" disabled>Permanently delete my account</button></form></div>`, null, () => true);
+  const inp = sh.querySelector('#dc'), go = sh.querySelector('#dgo');
+  inp.oninput = () => { go.disabled = inp.value.trim() !== 'DELETE'; };
+  sh.querySelector('#df').onsubmit = async e => {
+    e.preventDefault(); if (inp.value.trim() !== 'DELETE') return;
+    go.disabled = true; go.textContent = 'Deleting...'; const err = sh.querySelector('#derr'); err.textContent = '';
+    try { await deleteAccount(); }
+    catch (x) { go.disabled = false; go.textContent = 'Permanently delete my account'; err.textContent = (x && x.message) || 'Something went wrong. Nothing else was deleted. Please try again.'; return; }
+    $('#modal').innerHTML = ''; toast('Your account has been deleted. Take care!');
+  };
+}
+async function deleteAccount() {
+  const mine = S.renos.filter(r => r.user_id === S.user.id);
+  const paths = mine.flatMap(r => r.photos.flatMap(p => [p.path, thumbPath(p.path)]));
+  for (let i = 0; i < paths.length; i += 50) { const {error} = await sb.storage.from(BUCKET).remove(paths.slice(i, i + 50)); if (error) throw new Error('Could not delete your photos: ' + error.message); }
+  const {error} = await sb.rpc('delete_my_account'); if (error) throw new Error('Could not delete your account: ' + error.message);
+  try { ['rm_draft', 'rm_seen', 'rm_fav', 'rm_prof'].forEach(k => localStorage.removeItem(k)); } catch (x) {}
+  await sb.auth.signOut({scope: 'local'});
+  S.user = null; S.profile = null; S.favs = new Set(); S.convos = []; updateNav(); loadRenos();
 }
 const needName = () => { if (!S.user) { authModal(); return true; } if (!S.profile || !S.profile.name) { profileModal('Add your name first so neighbours know who you are.'); return true; } return false; };
 
