@@ -173,6 +173,7 @@ function authModal(mode, msg) {
   ${mode === 'up' ? '<label class="l">Your name</label><input id="an" required maxlength="60" autocomplete="name" placeholder="e.g. Sam O.">' : ''}
   <label class="l">Email</label><input id="ae" type="email" required autocomplete="email">
   <label class="l">Password</label><input id="ap" type="password" required minlength="8" autocomplete="${mode === 'in' ? 'current-password' : 'new-password'}">
+  ${mode === 'up' ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;font-size:13px;font-weight:400"><input type="checkbox" id="ag" required style="width:auto;margin-top:3px;padding:0"><span>I’m 18 or over and agree to the <a href="terms.html" target="_blank" rel="noopener">Terms of use</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a>.</span></label>' : ''}
   <p class="err" id="aerr">${esc(msg || '')}</p><p class="hint" id="ainfo"></p>
   <button class="btn" style="width:100%;margin-top:12px">${mode === 'in' ? 'Sign in' : 'Create account'}</button></form>
   <button class="btn alt oauth" id="goog">Continue with Google</button>
@@ -339,11 +340,13 @@ function formModal(ex) {
   <button type="button" class="btn alt sm" id="addBk">+ Add another line</button><p class="hint" id="bkSum"></p>
   <label class="l">Best tradies (optional)</label><div id="trRows">${Array.from({length: Math.max(3, tr.length)}, (_, i) => trRow(tr[i])).join('')}</div>
   <button type="button" class="btn alt sm" id="addTr">+ Add another tradie</button>
+  <p class="hint">Stick to your own honest experience, and use the business name where you can.</p>
   <div class="row"><div><label class="l">Council approval (days, 0 if none)</label><input id="cd" type="number" min="0" inputmode="numeric" value="${ex ? ex.council_days : 0}"></div><div></div></div>
   <label class="l">Council notes (optional)</label><input id="cn" maxlength="600" value="${esc(ex && ex.council_notes)}" placeholder="What was it like?">
   <label class="l">Your story</label><textarea id="st" rows="4" maxlength="3000" placeholder="What would you tell a neighbour?">${esc(ex && ex.story)}</textarea>
   <label class="l">Photos (<span id="pc">0</span> of ${MAXPHOTOS})</label><label class="drop">📷 Tap to add photos<input type="file" id="pf" accept="image/*" multiple hidden></label>
   <p class="hint">First photo is the cover. Please avoid house numbers, street signs and people's faces. Location data is removed from photos.</p><div class="ph-grid" id="pg"></div>
+  <p class="hint" style="margin-top:14px">By publishing you confirm this is your own reno and an honest account of your experience, and that you have the right to share the photos. Please read the <a href="terms.html" target="_blank" rel="noopener">content rules</a>.</p>
   <p class="err" id="ferr" role="alert"></p><button class="btn" id="sv" style="margin-top:14px;width:100%">${ex ? 'Save changes' : 'Publish reno'}</button></form></div>`, null, () => !dirty || confirm('Close without publishing? Your answers are saved as a draft on this device, but photos are not.'));
   const g = q => sh.querySelector(q);
   typeahead(g('#sq'), g('#sa'), s => { sub = {name: s[0], state: s[1], pc: s[2], lat: s[3], lng: s[4]}; g('#sq').value = `${s[0]}, ${s[1]} ${s[2]}`; dirty = true; saveDraft(); }, () => { sub = null; });
