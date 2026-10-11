@@ -18,7 +18,7 @@ const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KE
 
 const DEBUG = /[?&]debug=1/.test(location.search);
 let diag = 'not loaded yet';
-const S = {user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
+const S = {blocks: new Map(), user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
   F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false, home:'', size:''}};
 try { S.seen = JSON.parse(localStorage.getItem('rm_seen') || '{}'); } catch (e) {}
 
@@ -88,10 +88,12 @@ async function loadRenos() {
   const m = location.hash.match(/^#r=([0-9a-f-]{36})$/); if (m && S.renos.find(r => r.id === m[1])) openReno(m[1]);
 }
 async function loadMine() {
-  if (!S.user) { S.favs = new Set(); S.convos = []; updateNav(); render(); return; }
-  const [p, f] = await Promise.all([
+  if (!S.user) { S.favs = new Set(); S.convos = []; S.blocks = new Map(); updateNav(); render(); return; }
+  const [p, f, bl] = await Promise.all([
     sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle(),
-    sb.from('favourites').select('reno_id')]);
+    sb.from('favourites').select('reno_id'),
+    sb.from('blocks').select('blocked_id, p:profiles!blocked_id(name)')]);
+  S.blocks = new Map(((bl && bl.data) || []).map(r => [r.blocked_id, (r.p && r.p.name) || 'A member']));
   S.profile = p.data || {id: S.user.id, name: '', suburb: '', bio: '', instagram: '', email_notifications: true};
   S.favs = new Set((f.data || []).map(x => x.reno_id));
   await loadConvos(); render(); updateNav();
@@ -104,13 +106,14 @@ async function loadConvos() {
   S.convos = (data || []).filter(c => c.messages && c.messages.length).sort((a, b) => b.messages[0].created_at.localeCompare(a.messages[0].created_at));
   updateNav();
 }
+const otherId = c => c.asker_id === S.user.id ? c.owner_id : c.asker_id;
 const unread = c => { const m = c.messages[0]; return m.sender_id !== S.user.id && new Date(m.created_at) > new Date(S.seen[c.id] || 0); };
 function updateNav() {
   const on = !!S.user;
   $('#favBtn').hidden = !on; $('#msgBtn').hidden = !on; $('#mineChip').hidden = !on;
   if (!on && S.F.mine) { S.F.mine = false; $('#mineChip').setAttribute('aria-pressed', 'false'); }
   $('#favN').textContent = S.favs.size; $('#favN').hidden = !S.favs.size;
-  const u = on ? S.convos.filter(unread).length : 0; $('#msgN').textContent = u; $('#msgN').hidden = !u;
+  const u = on ? S.convos.filter(c => !S.blocks.has(otherId(c))).filter(unread).length : 0; $('#msgN').textContent = u; $('#msgN').hidden = !u;
   $('#meBtn').textContent = on ? ((S.profile && S.profile.name) || S.user.email || '?')[0].toUpperCase() : '?';
 }
 
@@ -126,7 +129,7 @@ function filtered() {
 function card(d) {
   const c = COL[d.type] || COL.Other, ph = d.photos[0];
   const bg = ph ? `url(&quot;${ph.thumb}&quot;) center/cover` : `linear-gradient(145deg,${c[0]},${c[1]})`;
-  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><div class="price disp ${noCost(d) ? 'dim' : ''}">${esc(priceLabel(d))}</div><h3>${esc(d.title)}</h3><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
+  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><h3 style="font-size:19px;line-height:1.25;margin:0 0 4px">${esc(d.title)}</h3><div style="font-size:14px;font-weight:${noCost(d) ? 500 : 700};margin-bottom:3px;${noCost(d) ? 'color:var(--mute)' : ''}">${noCost(d) ? 'Cost not shared' : esc(priceLabel(d)) + ' spent'}</div><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
 }
 let map, layer, markers = {}, firstFit = true;
 const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0; return [((h % 1000) / 1000 - .5) * .006, (((h >> 10) % 1000) / 1000 - .5) * .006]; };
@@ -183,6 +186,7 @@ function authModal(mode, msg) {
   ${mode === 'up' ? '<label class="l">Your name</label><input id="an" required maxlength="60" autocomplete="name" placeholder="e.g. Sam O.">' : ''}
   <label class="l">Email</label><input id="ae" type="email" required autocomplete="email">
   <label class="l">Password</label><input id="ap" type="password" required minlength="8" autocomplete="${mode === 'in' ? 'current-password' : 'new-password'}">
+  ${mode === 'in' ? '<button type="button" class="link" id="fp" style="margin-top:8px;font-size:13px">Forgot your password?</button>' : ''}
   ${mode === 'up' ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:14px;font-size:13px;font-weight:400"><input type="checkbox" id="ag" required style="width:auto;margin-top:3px;padding:0"><span>I’m 18 or over and agree to the <a href="terms.html" target="_blank" rel="noopener">Terms of use</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a>.</span></label>' : ''}
   <p class="err" id="aerr">${esc(msg || '')}</p><p class="hint" id="ainfo"></p>
   <button class="btn" style="width:100%;margin-top:12px">${mode === 'in' ? 'Sign in' : 'Create account'}</button></form>
@@ -190,6 +194,7 @@ function authModal(mode, msg) {
   <p class="sub" style="text-align:center;margin-top:14px">${mode === 'in' ? 'New here? <button class="link" id="sw">Create an account</button>' : 'Already a member? <button class="link" id="sw">Sign in</button>'}</p></div>`, null, () => true);
   sh.querySelector('.sh').insertAdjacentHTML('afterbegin', '<img src="assets/logo.svg" width="48" height="49" alt="" style="display:block;margin-bottom:10px">');
   sh.querySelector('#sw').onclick = () => authModal(mode === 'in' ? 'up' : 'in');
+  const fp = sh.querySelector('#fp'); if (fp) fp.onclick = () => resetRequestModal($('#ae').value.trim());
   sh.querySelector('#goog').onclick = async () => { const {error} = await sb.auth.signInWithOAuth({provider: 'google', options: {redirectTo: location.origin + location.pathname}}); if (error) sh.querySelector('#aerr').textContent = error.message.includes('provider') ? 'Google sign-in is not switched on yet.' : error.message; };
   sh.querySelector('#af').onsubmit = async e => {
     e.preventDefault(); const em = $('#ae').value.trim(), pw = $('#ap').value, err = $('#aerr'); err.textContent = '';
@@ -197,6 +202,36 @@ function authModal(mode, msg) {
     else { const {data, error} = await sb.auth.signUp({email: em, password: pw, options: {data: {full_name: $('#an').value.trim()}, emailRedirectTo: location.origin + location.pathname}});
       if (error) return err.textContent = error.message;
       if (!data.session) { $('#ainfo').textContent = 'Check your email for a confirmation link, then sign in.'; return; } $('#modal').innerHTML = ''; }
+  };
+}
+function resetRequestModal(prefill) {
+  const sh = shell(head('Reset your password', 'Enter your email and we’ll send you a link to choose a new one.') + `<div class="bd"><form id="rf2">
+  <label class="l">Email</label><input id="re" type="email" required autocomplete="email" value="${esc(prefill)}">
+  <p class="err" id="rerr" role="alert"></p><p class="hint" id="rok" role="status"></p>
+  <button class="btn" style="width:100%;margin-top:12px">Send reset link</button></form>
+  <p class="sub" style="text-align:center;margin-top:14px"><button class="link" id="bkIn">Back to sign in</button></p></div>`, null, () => true);
+  sh.querySelector('#bkIn').onclick = () => authModal('in');
+  sh.querySelector('#rf2').onsubmit = async e => {
+    e.preventDefault(); const em = $('#re').value.trim(), err = $('#rerr'), ok = $('#rok'); err.textContent = ''; ok.textContent = '';
+    const {error} = await sb.auth.resetPasswordForEmail(em, {redirectTo: location.origin + location.pathname});
+    if (error && (error.status === 429 || /seconds|rate limit/i.test(error.message || ''))) return err.textContent = 'Please wait a minute before asking for another link.';
+    ok.textContent = 'If there’s an account for ' + em + ', a reset link is on its way. It can take a minute, and it may land in your spam folder.';
+  };
+}
+function newPasswordModal() {
+  if ($('#modal h2[data-pw]')) return;
+  const sh = shell(head('Choose a new password', 'Pick something at least 8 characters long.') + `<div class="bd"><form id="npf">
+  <label class="l">New password</label><input id="np1" type="password" required minlength="8" autocomplete="new-password">
+  <label class="l">Type it again</label><input id="np2" type="password" required minlength="8" autocomplete="new-password">
+  <p class="err" id="nerr" role="alert"></p>
+  <button class="btn" style="width:100%;margin-top:12px">Save new password</button></form></div>`, null, () => true);
+  sh.querySelector('h2').dataset.pw = '1';
+  sh.querySelector('#npf').onsubmit = async e => {
+    e.preventDefault(); const a = $('#np1').value, b = $('#np2').value, err = $('#nerr'); err.textContent = '';
+    if (a.length < 8) return err.textContent = 'Use at least 8 characters.';
+    if (a !== b) return err.textContent = 'The two passwords don’t match.';
+    const {error} = await sb.auth.updateUser({password: a}); if (error) return err.textContent = error.message;
+    $('#modal').innerHTML = ''; toast('Password updated. You’re signed in.');
   };
 }
 function profileModal(msg) {
@@ -211,9 +246,12 @@ function profileModal(msg) {
   <p class="hint">Adds a link to your listings. Photos can't be imported from Instagram, so upload them directly.</p>
   <label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:14px;font-weight:500"><input type="checkbox" id="pe" ${p.email_notifications === false ? '' : 'checked'} style="width:auto;margin-top:3px;padding:0"><span>Email me when I get a new message<br><small style="color:var(--mute);font-weight:400">We send at most one email every 30 minutes per conversation, and never include the message itself.</small></span></label>
   <button class="btn" style="width:100%;margin-top:14px">Save profile</button></form>
-  <p class="sub" style="margin-top:14px">Signed in as ${esc(S.user.email)} · <button class="link" id="so">Sign out</button></p>
+  <p class="sub" style="margin-top:14px">Signed in as ${esc(S.user.email)} · <button class="link" id="so">Sign out</button> · <button class="link" id="cpw">Change password</button></p>
+  ${S.blocks.size ? `<div style="margin-top:16px"><b>Blocked members</b>${[...S.blocks].map(([id, n]) => `<div class="trade"><span>${esc(n)}</span><button class="link" data-unb="${esc(id)}">Unblock</button></div>`).join('')}</div>` : ''}
   <p class="sub" style="margin-top:6px"><button class="link" id="del" style="color:#d33">Delete my account</button></p></div>`, null, () => true);
   sh.querySelector('#del').onclick = deleteAccountModal;
+  sh.querySelector('#cpw').onclick = newPasswordModal;
+  sh.querySelectorAll('[data-unb]').forEach(b => b.onclick = () => unblockMember(b.dataset.unb, () => profileModal()));
   sh.querySelector('#so').onclick = async () => { await sb.auth.signOut(); $('#modal').innerHTML = ''; toast('Signed out'); };
   sh.querySelector('#pf').onsubmit = async e => {
     e.preventDefault();
@@ -288,7 +326,7 @@ function openReno(id) {
   const c = COL[d.type] || COL.Other, mine = S.user && d.user_id === S.user.id, mx = Math.max(1, ...(d.breakdown || []).map(b => b.amount));
   const first = (d.owner || '').split(' ')[0] || 'them';
   const sim = similar(d), simHtml = sim.length ? `<h3>Others nearby who’ve done something similar</h3><div class="list" id="sim">${sim.map(card).join('')}</div>` : '';
-  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div class="disp" style="font-size:${noCost(d) ? 28 : 40}px;font-weight:800;margin-top:6px">${esc(priceLabel(d))} <span style="font-size:16px;font-weight:600">· ${d.months} ${d.months === 1 ? 'month' : 'months'}</span></div></div>
+  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div style="font-size:16px;font-weight:700;margin-top:10px">${noCost(d) ? 'Cost not shared' : esc(priceLabel(d)) + ' spent'} <span style="font-weight:500">· ${d.months} ${d.months === 1 ? 'month' : 'months'}</span></div></div>
   ${d.photos.length ? `<div class="gal"><img class="main-img" id="mi" src="${d.photos[0].url}" alt="${esc(d.photos[0].caption || d.title)}"><div class="thumbs">${d.photos.map((p, i) => `<img src="${p.thumb}" data-i="${i}" class="${i ? '' : 'on'}" alt="${esc(p.caption || 'Photo ' + (i + 1))}">`).join('')}</div><p class="hint" id="cap">${esc(d.photos[0].caption)}</p></div>` : ''}
   <div class="bd"><div class="who"><span class="av" style="display:grid;place-items:center">${esc(d.owner[0] || '?')}</span><div><b>${esc(d.owner)}</b><div class="sub">Renovated in ${esc(d.suburb)}</div></div>${d.ig ? `<a href="https://instagram.com/${esc(d.ig)}" target="_blank" rel="noopener" class="tag" style="margin-left:auto;text-decoration:none;color:inherit">📷 @${esc(d.ig)}</a>` : ''}</div>
   ${(d.home_type || d.job_size) ? `<div class="meta" style="margin-top:12px">${d.home_type ? `<span class="tag">🏠 ${esc(d.home_type)}</span>` : ''}${d.job_size ? `<span class="tag">🔧 ${esc(SIZES[d.job_size])}</span>` : ''}</div>` : ''}
@@ -299,8 +337,8 @@ function openReno(id) {
   ${simHtml}
   <p class="hint" style="margin-top:14px">Costs and reviews are self-reported and not verified.</p>
   ${mine ? `<h3>This is your reno</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ed">Edit</button><button class="btn alt" id="cl">Copy link</button><button class="btn danger" id="del">Delete</button></div>`
-    : `<h3>Ask ${esc(first)} a question</h3>${S.user ? `<form id="mf"><textarea rows="3" required maxlength="1000" placeholder="Hi! How did you find your builder?"></textarea><p class="hint">Messages are private between you and ${esc(first)}.</p><button class="btn" style="margin-top:10px;width:100%">Connect with ${esc(first)}</button></form>` : `<p class="sub">Sign in to message ${esc(first)}.</p><button class="btn" id="si">Sign in</button>`}
-    <div style="display:flex;gap:16px;margin-top:16px"><button class="link" id="cl">Copy link</button><button class="link" id="rp">Report this listing</button></div>`}</div>`);
+    : `<h3>Ask ${esc(first)} a question</h3>${S.user && S.blocks.has(d.user_id) ? `<p class="sub">You’ve blocked ${esc(first)}. <button class="link" id="ub2">Unblock</button> to send a message.</p>` : S.user ? `<form id="mf"><textarea rows="3" required maxlength="1000" placeholder="Hi! How did you find your builder?"></textarea><p class="hint">Messages are private between you and ${esc(first)}.</p><button class="btn" style="margin-top:10px;width:100%">Connect with ${esc(first)}</button></form>` : `<p class="sub">Sign in to message ${esc(first)}.</p><button class="btn" id="si">Sign in</button>`}
+    <div style="display:flex;gap:16px;margin-top:16px"><button class="link" id="cl">Copy link</button><button class="link" id="rp">Report this listing</button>${S.user && !d.sample && !S.blocks.has(d.user_id) ? `<button class="link" id="bm">Block ${esc(first)}</button>` : ''}</div>`}</div>`);
   const g = (q) => sh.querySelector(q);
   if (d.photos.length) {
     sh.querySelector('.thumbs').onclick = e => { const i = e.target.closest('img'); if (!i) return; const p = d.photos[+i.dataset.i]; g('#mi').src = p.url; g('#cap').textContent = p.caption || ''; sh.querySelectorAll('.thumbs img').forEach(x => x.classList.toggle('on', x === i)); };
@@ -312,6 +350,8 @@ function openReno(id) {
   if (g('#ed')) g('#ed').onclick = () => formModal(d);
   if (g('#del')) g('#del').onclick = () => delReno(d);
   if (g('#rp')) g('#rp').onclick = () => reportModal(d);
+  if (g('#bm')) g('#bm').onclick = () => blockMember(d.user_id, d.owner, () => openReno(id));
+  if (g('#ub2')) g('#ub2').onclick = () => unblockMember(d.user_id, () => openReno(id));
   if (g('#mf')) g('#mf').onsubmit = async e => { e.preventDefault(); if (needName()) return; const txt = g('#mf textarea').value.trim(); if (txt) await startConvo(d, txt); };
 }
 async function delReno(d) {
@@ -332,13 +372,32 @@ function reportModal(d) {
 async function startConvo(d, text) {
   let {data: ex} = await sb.from('conversations').select('id').eq('reno_id', d.id).eq('asker_id', S.user.id).maybeSingle();
   let id = ex && ex.id;
-  if (!id) { const {data, error} = await sb.from('conversations').insert({reno_id: d.id, owner_id: d.user_id}).select('id').single(); if (error) return toast('Could not start chat: ' + error.message); id = data.id; }
+  if (!id) { const {data, error} = await sb.from('conversations').insert({reno_id: d.id, owner_id: d.user_id}).select('id').single(); if (error) return toast(error.code === '42501' ? 'This member can’t be messaged right now.' : 'Could not start chat: ' + error.message); id = data.id; }
   const {error} = await sb.from('messages').insert({conversation_id: id, body: text.slice(0, 1000)});
-  if (error) return toast('Message not sent: ' + error.message);
+  if (error) return toast(error.code === '42501' ? 'This member can’t be messaged right now.' : 'Message not sent: ' + error.message);
   await loadConvos(); threadModal(id);
 }
+async function blockMember(id, name, after) {
+  if (!S.user) return authModal();
+  if (!confirm('Block ' + name + '? You won’t be able to message each other, and their conversations will be hidden. You can unblock them any time from your profile.')) return;
+  const {error} = await sb.from('blocks').insert({blocked_id: id});
+  if (error && error.code !== '23505') return toast('Could not block: ' + error.message);
+  S.blocks.set(id, name); updateNav(); toast(name + ' is blocked'); if (after) after();
+}
+async function unblockMember(id, after) {
+  const {error} = await sb.from('blocks').delete().eq('blocked_id', id);
+  if (error) return toast('Could not unblock: ' + error.message);
+  S.blocks.delete(id); updateNav(); toast('Unblocked'); if (after) after();
+}
+function reportConversationModal(c) {
+  const oid = otherId(c);
+  const sh = shell(head('Report this conversation', 'Tell us what’s wrong. Reports are reviewed by the Renomates team.') + `<div class="bd"><form id="rcf"><label class="l">Reason</label><select id="rcr"><option>Harassment or threats</option><option>Spam or advertising</option><option>Scam or fraud</option><option>Offensive content</option><option>Other</option></select><label class="l">Details (optional)</label><textarea id="rcd" rows="3" maxlength="300"></textarea><button class="btn" style="margin-top:12px;width:100%">Send report</button></form></div>`);
+  sh.querySelector('#rcf').onsubmit = async e => { e.preventDefault();
+    const {error} = await sb.from('reports').insert({reno_id: c.reno_id, reason: ('Conversation with member ' + oid + ': ' + $('#rcr').value + ' ' + $('#rcd').value).trim().slice(0, 500)});
+    $('#modal').innerHTML = ''; toast(error ? 'Could not send report' : 'Thanks. We’ll take a look.'); };
+}
 function inboxModal() {
-  const l = S.convos;
+  const l = S.convos.filter(c => !S.blocks.has(otherId(c)));
   const sh = shell(head('Messages', 'Private chats with renovators', 'var(--mint),var(--sun)') + `<div class="bd" style="padding-top:12px">${l.length ? l.map(c => { const o = c.asker_id === S.user.id ? c.owner : c.asker, m = c.messages[0];
     return `<button class="th" data-c="${c.id}"><span class="av" style="display:grid;place-items:center;flex:none">${esc(((o && o.name) || '?')[0])}</span><span style="min-width:0"><b>${esc((o && o.name) || 'A neighbour')}</b><div class="sub">${esc(c.reno && c.reno.title)}</div><div class="sub" style="color:var(--ink)">${esc(m.body.slice(0, 60))}</div></span>${unread(c) ? '<i class="dot"></i>' : ''}</button>`; }).join('')
     : '<div class="empty"><div style="font-size:42px">✉</div><h3>No messages yet</h3><p class="sub">Open a reno and tap Connect to ask a question.</p></div>'}</div>`);
@@ -346,13 +405,18 @@ function inboxModal() {
 }
 async function threadModal(id) {
   const c = S.convos.find(x => x.id === id), o = c ? (c.asker_id === S.user.id ? c.owner : c.asker) : null;
+  const oid = c ? otherId(c) : null, blocked = !!(oid && S.blocks.has(oid));
   const {data: msgs} = await sb.from('messages').select('*').eq('conversation_id', id).order('created_at');
   S.seen[id] = new Date().toISOString(); try { localStorage.setItem('rm_seen', JSON.stringify(S.seen)); } catch (e) {} updateNav();
-  const sh = shell(head(esc((o && o.name) || 'Chat'), esc((c && c.reno && c.reno.title) || ''), 'var(--mint),var(--sun)') + `<div class="bd" style="padding-top:12px"><button class="chip" id="bk">← All messages</button><div id="bubs">${(msgs || []).map(m => `<div class="bub ${m.sender_id === S.user.id ? 'me' : ''}">${esc(m.body)}</div>`).join('')}</div><form id="tf" style="display:flex;gap:8px;margin-top:12px"><input id="tt" required maxlength="1000" placeholder="Write a message" aria-label="Message" style="flex:1"><button class="btn">Send</button></form></div>`);
+  const sh = shell(head(esc((o && o.name) || 'Chat'), esc((c && c.reno && c.reno.title) || ''), 'var(--mint),var(--sun)') + `<div class="bd" style="padding-top:12px"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="chip" id="bk">← All messages</button>${blocked ? '' : '<button class="chip" id="blk">🚫 Block</button>'}<button class="chip" id="rpt">⚑ Report</button></div><div id="bubs">${(msgs || []).map(m => `<div class="bub ${m.sender_id === S.user.id ? 'me' : ''}">${esc(m.body)}</div>`).join('')}</div>${blocked ? `<p class="sub" style="margin-top:14px">You’ve blocked ${esc((o && o.name) || 'this member')}. <button class="link" id="unb">Unblock</button> to message them again.</p>` : `<form id="tf" style="display:flex;gap:8px;margin-top:12px"><input id="tt" required maxlength="1000" placeholder="Write a message" aria-label="Message" style="flex:1"><button class="btn">Send</button></form>`}</div>`);
   S.curThread = id;
   sh.querySelector('#bk').onclick = inboxModal;
-  sh.querySelector('#tf').onsubmit = async e => { e.preventDefault(); const t = $('#tt').value.trim(); if (!t) return; $('#tt').value = '';
-    const {error} = await sb.from('messages').insert({conversation_id: id, body: t}); if (error) toast('Message not sent'); else { await loadConvos(); threadModal(id); } };
+  const blk = sh.querySelector('#blk'); if (blk) blk.onclick = () => blockMember(oid, (o && o.name) || 'this member', () => inboxModal());
+  const unb = sh.querySelector('#unb'); if (unb) unb.onclick = () => unblockMember(oid, () => threadModal(id));
+  sh.querySelector('#rpt').onclick = () => c && reportConversationModal(c);
+  const tf = sh.querySelector('#tf');
+  if (tf) tf.onsubmit = async e => { e.preventDefault(); const t = $('#tt').value.trim(); if (!t) return; $('#tt').value = '';
+    const {error} = await sb.from('messages').insert({conversation_id: id, body: t}); if (error) toast(error.code === '42501' ? 'This conversation is no longer available.' : 'Message not sent'); else { await loadConvos(); threadModal(id); } };
   sh.scrollTop = 1e5;
 }
 function subscribeMessages() {
@@ -530,11 +594,12 @@ function init() {
   render(true); initMap();
   if (!configured) return;
   loadRenos();
-  sb.auth.onAuthStateChange((ev, session) => { S.user = session ? session.user : null; if (!S.user) S.profile = null; setTimeout(loadMine, 0); });
-  const hash = location.hash, errM = hash.match(/error_description=([^&]+)/), fromEmail = /access_token=|type=signup|type=magiclink|type=recovery/.test(hash);
-  if (errM) { toast(decodeURIComponent(errM[1].replace(/\+/g, ' '))); history.replaceState(null, '', location.pathname); }
+  sb.auth.onAuthStateChange((ev, session) => { S.user = session ? session.user : null; if (!S.user) S.profile = null; setTimeout(loadMine, 0); if (ev === 'PASSWORD_RECOVERY') setTimeout(newPasswordModal, 0); });
+  const hash = location.hash, errM = hash.match(/error_description=([^&]+)/), isRecovery = /type=recovery/.test(hash), fromEmail = /access_token=|type=signup|type=magiclink/.test(hash) && !isRecovery;
+  if (errM) { const em = decodeURIComponent(errM[1].replace(/\+/g, ' ')); toast(em); history.replaceState(null, '', location.pathname); if (/expired|invalid/i.test(em)) resetRequestModal(); }
   sb.auth.getSession().then(({data}) => {
     if (data.session && !S.user) { S.user = data.session.user; loadMine(); }
+    if (isRecovery && data.session) { history.replaceState(null, '', location.pathname); newPasswordModal(); }
     if (fromEmail && data.session) { toast('Email confirmed. Welcome to Renomates!'); history.replaceState(null, '', location.pathname); }
   });
   subscribeMessages();
