@@ -7,6 +7,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const TYPES = ['Kitchen','Bathroom','Extension','Painting','Floors','Laundry','Bedrooms','Living and Dining','Exterior','Full reno','Other'];
 const EM = {Kitchen:'🍳',Bathroom:'🛁',Extension:'🏠',Painting:'🎨',Floors:'🪵',Laundry:'🧺',Bedrooms:'🛏️','Living and Dining':'🛋️',Exterior:'🌿','Full reno':'🛠️',Other:'🔨'};
 const COL = {Kitchen:['#ffd84d','#ff9f43'],Bathroom:['#7fe0ff','#6c8cff'],Extension:['#ff9aa8','#ff6b57'],Painting:['#e2a6ff','#8f6bff'],Floors:['#ffc98a','#c98a4b'],Laundry:['#9fe3f2','#4bb6d6'],Bedrooms:['#b9b6ff','#7a76f0'],'Living and Dining':['#ffb3c7','#ff6f91'],Exterior:['#c3f26b','#3fbf6a'],'Full reno':['#8ff0c4','#1fcf9f'],Other:['#d8d6ec','#9d9bc4']};
+const HOMES = ['Victorian', 'Edwardian', 'Federation', 'Californian bungalow', 'Art deco', 'Post-war (1945–60)', '1960s–70s', '1980s–90s', '2000s or newer', 'Apartment or unit', 'Townhouse'];
+const SIZES = {refresh: 'Light refresh', major: 'Big update', structural: 'Structural or rebuild'};
+const BANDS = [[0, 10000], [10000, 20000], [20000, 40000], [40000, 60000], [60000, 100000], [100000, 150000], [150000, 250000], [250000, 400000], [400000, 1000000]];
+const kk = n => Math.round(n / 1000);
+const bandLabel = (lo, hi) => lo <= 0 ? 'Under $' + kk(hi) + 'k' : hi >= 1e6 ? '$' + kk(lo) + 'k+' : '$' + kk(lo) + '–' + kk(hi) + 'k';
 const MAXPHOTOS = 10, BUCKET = 'reno-photos';
 const configured = C.SUPABASE_URL && C.SUPABASE_ANON_KEY && !C.SUPABASE_URL.includes('YOUR-PROJECT');
 const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY) : null;
@@ -14,11 +19,14 @@ const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KE
 const DEBUG = /[?&]debug=1/.test(location.search);
 let diag = 'not loaded yet';
 const S = {user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
-  F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false}};
+  F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false, home:'', size:''}};
 try { S.seen = JSON.parse(localStorage.getItem('rm_seen') || '{}'); } catch (e) {}
 
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)));
 const k = c => '$' + (c >= 1e6 ? (c/1e6).toFixed(1) + 'm' : Math.round(c/1000) + 'k');
+const effCost = d => d.cost != null ? d.cost : d.cost_low != null ? (d.cost_low + Math.min(d.cost_high, 500000)) / 2 : null;
+const priceLabel = d => d.cost != null ? k(d.cost) : d.cost_low != null ? bandLabel(d.cost_low, d.cost_high) : 'Cost not shared';
+const noCost = d => d.cost == null && d.cost_low == null;
 const money = c => '$' + Number(c).toLocaleString('en-AU');
 const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
 function toast(t) { const e = $('#toast'); e.innerHTML = `<div class="toast">${esc(t)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => e.innerHTML = '', 3200); }
@@ -110,19 +118,19 @@ function updateNav() {
 function filtered() {
   const F = S.F, q = F.q.toLowerCase();
   const r = S.renos.filter(d => (!F.mine || (S.user && d.user_id === S.user.id)) && (!F.sub || (d.suburb === F.sub.name && d.state === F.sub.state)) && (!F.types.size || d.types.some(t => F.types.has(t))) &&
-    (F.max >= 500 || d.cost <= F.max * 1000) &&
+    (F.max >= 500 || effCost(d) == null || effCost(d) <= F.max * 1000) && (!F.home || d.home_type === F.home) && (!F.size || d.job_size === F.size) &&
     (!q || [d.title, d.story, d.label, d.type, d.suburb, d.owner, ...(d.trades || []).map(t => t.name + ' ' + t.trade)].join(' ').toLowerCase().includes(q)));
-  const s = {new: (a, b) => b.created_at.localeCompare(a.created_at), lo: (a, b) => a.cost - b.cost, hi: (a, b) => b.cost - a.cost}[F.sort];
+  const s = {new: (a, b) => b.created_at.localeCompare(a.created_at), lo: (a, b) => (effCost(a) ?? Infinity) - (effCost(b) ?? Infinity), hi: (a, b) => (effCost(b) ?? -1) - (effCost(a) ?? -1)}[F.sort];
   return r.sort(s);
 }
 function card(d) {
   const c = COL[d.type] || COL.Other, ph = d.photos[0];
   const bg = ph ? `url(&quot;${ph.thumb}&quot;) center/cover` : `linear-gradient(145deg,${c[0]},${c[1]})`;
-  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><div class="price disp">${k(d.cost)}</div><h3>${esc(d.title)}</h3><div class="sub">${esc(d.suburb)}, ${esc(d.state)} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
+  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><div class="price disp ${noCost(d) ? 'dim' : ''}">${esc(priceLabel(d))}</div><h3>${esc(d.title)}</h3><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
 }
 let map, layer, markers = {}, firstFit = true;
 const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0; return [((h % 1000) / 1000 - .5) * .006, (((h >> 10) % 1000) / 1000 - .5) * .006]; };
-const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], html: `<div class="pin ${on ? 'on' : ''}">${k(d.cost)}</div>`});
+const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], html: `<div class="pin ${on ? 'on' : ''}">${EM[d.type] || '🔨'}${d.types.length > 1 ? '<small>+' + (d.types.length - 1) + '</small>' : ''}</div>`});
 function initMap() {
   if (map || typeof L === 'undefined') return;
   map = L.map('map').setView([-25.3, 133.8], 4);
@@ -133,7 +141,7 @@ function drawMap(list, fit) {
   initMap(); if (!map) return; layer.clearLayers(); markers = {};
   const pts = [];
   list.forEach(d => { const j = jit(d.id), ll = [d.lat + j[0], d.lng + j[1]]; pts.push(ll);
-    const m = L.marker(ll, {icon: pinIcon(d, S.sel === d.id), keyboard: true, title: d.title}).on('click', () => openReno(d.id)).addTo(layer);
+    const m = L.marker(ll, {icon: pinIcon(d, S.sel === d.id), keyboard: true, title: d.title + ' · ' + priceLabel(d)}).on('click', () => openReno(d.id)).addTo(layer);
     m.on('mouseover', () => setSel(d.id)); markers[d.id] = m; });
   if (fit && pts.length) map.fitBounds(pts, {padding: [40, 40], maxZoom: firstFit && pts.length > 1 ? 13 : 14});
   else if (fit) map.setView([-25.3, 133.8], 4);
@@ -147,6 +155,7 @@ function setSel(id) {
 function render(fit) {
   if (!configured) { $('#list').innerHTML = `<div class="empty"><div style="font-size:42px">🔧</div><h3>Almost there</h3><p class="sub">Add your Supabase details to js/config.js. The README walks you through it.</p></div>`; return; }
   $('#maxV').textContent = S.F.max >= 500 ? '$500k+' : '$' + S.F.max + 'k';
+  { const n = (S.F.max < 500) + !!S.F.home + !!S.F.size; $('#moreBtn').textContent = 'More filters' + (n ? ' (' + n + ')' : ''); }
   const r = filtered(), where = S.F.mine ? ' from you' : S.F.sub ? ' in ' + S.F.sub.name : ' across Australia';
   $('#count').textContent = r.length + (r.length === 1 ? ' reno' : ' renos') + where + (DEBUG ? ' [DEBUG: ' + diag + '; after filters ' + r.length + '; project ' + (C.SUPABASE_URL || '').replace('https://', '') + ']' : '');
   $('#list').innerHTML = r.length ? r.map(card).join('') : (S.renos.length
@@ -264,18 +273,30 @@ function savedModal() {
 }
 
 /* ---------- reno detail ---------- */
+const km = (a, b) => { const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLn = (b.lng - a.lng) * r, x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLn / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+function similar(d) {
+  return S.renos.filter(r => r.id !== d.id).map(r => {
+    const overlap = r.types.filter(t => d.types.includes(t)).length; if (!overlap) return null;
+    const dist = km(d, r); if (dist > 25) return null;
+    const score = overlap * 3 + (d.home_type && r.home_type === d.home_type ? 2 : 0) + (d.job_size && r.job_size === d.job_size ? 1 : 0) + (dist < 2 ? 3 : dist < 5 ? 2 : dist < 10 ? 1 : 0);
+    return {r, score, dist};
+  }).filter(Boolean).sort((a, b) => b.score - a.score || a.dist - b.dist).slice(0, 3).map(x => x.r);
+}
 function openReno(id) {
   const d = S.renos.find(r => r.id === id); if (!d) return; S.sel = id;
   history.replaceState(null, '', '#r=' + id);
   const c = COL[d.type] || COL.Other, mine = S.user && d.user_id === S.user.id, mx = Math.max(1, ...(d.breakdown || []).map(b => b.amount));
   const first = (d.owner || '').split(' ')[0] || 'them';
-  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div class="disp" style="font-size:40px;font-weight:800;margin-top:6px">${k(d.cost)} <span style="font-size:16px;font-weight:600">over ${d.months} months</span></div></div>
+  const sim = similar(d), simHtml = sim.length ? `<h3>Others nearby who’ve done something similar</h3><div class="list" id="sim">${sim.map(card).join('')}</div>` : '';
+  const sh = shell(`<div class="sh" style="background:linear-gradient(145deg,${c[0]},${c[1]})"><i class="hb ${S.favs.has(id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${id}" style="right:58px;top:14px;width:36px;height:36px">♥</i><div class="big">${EM[d.type] || '🔨'}</div><h2>${esc(d.title)}</h2><p style="margin:6px 0 0;font-weight:500">${esc(d.suburb)}, ${esc(d.state)} · ${new Date(d.created_at).getFullYear()} · ${esc(d.label)}</p><div class="disp" style="font-size:${noCost(d) ? 28 : 40}px;font-weight:800;margin-top:6px">${esc(priceLabel(d))} <span style="font-size:16px;font-weight:600">· ${d.months} ${d.months === 1 ? 'month' : 'months'}</span></div></div>
   ${d.photos.length ? `<div class="gal"><img class="main-img" id="mi" src="${d.photos[0].url}" alt="${esc(d.photos[0].caption || d.title)}"><div class="thumbs">${d.photos.map((p, i) => `<img src="${p.thumb}" data-i="${i}" class="${i ? '' : 'on'}" alt="${esc(p.caption || 'Photo ' + (i + 1))}">`).join('')}</div><p class="hint" id="cap">${esc(d.photos[0].caption)}</p></div>` : ''}
   <div class="bd"><div class="who"><span class="av" style="display:grid;place-items:center">${esc(d.owner[0] || '?')}</span><div><b>${esc(d.owner)}</b><div class="sub">Renovated in ${esc(d.suburb)}</div></div>${d.ig ? `<a href="https://instagram.com/${esc(d.ig)}" target="_blank" rel="noopener" class="tag" style="margin-left:auto;text-decoration:none;color:inherit">📷 @${esc(d.ig)}</a>` : ''}</div>
+  ${(d.home_type || d.job_size) ? `<div class="meta" style="margin-top:12px">${d.home_type ? `<span class="tag">🏠 ${esc(d.home_type)}</span>` : ''}${d.job_size ? `<span class="tag">🔧 ${esc(SIZES[d.job_size])}</span>` : ''}</div>` : ''}
   <h3>The story</h3><p style="margin:0;white-space:pre-wrap">${esc(d.story)}</p>
   ${(d.breakdown || []).length ? `<h3>Where the money went</h3>${d.breakdown.map(b => `<div class="bk"><span>${esc(b.label)}</span><b style="width:${Math.max(6, b.amount / mx * 100)}%"></b><em>${k(b.amount)}</em></div>`).join('')}` : ''}
   ${(d.trades || []).length ? `<h3>Trades worth calling</h3>${d.trades.map(t => `<div class="trade"><span><b>${esc(t.name)}</b><div class="sub">${esc(t.trade)}</div></span><span style="color:var(--coral)">${stars(t.rating || 0)}</span></div>`).join('')}` : ''}
   <h3>Working with the council</h3><div class="cn"><div><div class="n disp">${d.council_days || 0}</div><div class="sub">days</div></div><div><b>${d.council_days ? 'Approval needed' : 'No permit needed'}</b><div class="sub">${esc(d.council_notes || '')}</div></div></div>
+  ${simHtml}
   <p class="hint" style="margin-top:14px">Costs and reviews are self-reported and not verified.</p>
   ${mine ? `<h3>This is your reno</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ed">Edit</button><button class="btn alt" id="cl">Copy link</button><button class="btn danger" id="del">Delete</button></div>`
     : `<h3>Ask ${esc(first)} a question</h3>${S.user ? `<form id="mf"><textarea rows="3" required maxlength="1000" placeholder="Hi! How did you find your builder?"></textarea><p class="hint">Messages are private between you and ${esc(first)}.</p><button class="btn" style="margin-top:10px;width:100%">Connect with ${esc(first)}</button></form>` : `<p class="sub">Sign in to message ${esc(first)}.</p><button class="btn" id="si">Sign in</button>`}
@@ -285,6 +306,7 @@ function openReno(id) {
     sh.querySelector('.thumbs').onclick = e => { const i = e.target.closest('img'); if (!i) return; const p = d.photos[+i.dataset.i]; g('#mi').src = p.url; g('#cap').textContent = p.caption || ''; sh.querySelectorAll('.thumbs img').forEach(x => x.classList.toggle('on', x === i)); };
     g('#mi').onclick = () => { const lb = document.createElement('div'); lb.className = 'lb'; lb.innerHTML = `<img src="${g('#mi').src}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb); };
   }
+  const sm = g('#sim'); if (sm) sm.onclick = e => { if (e.target.closest('.hb')) return; const c = e.target.closest('.card'); if (c) openReno(c.dataset.id); };
   const cl = g('#cl'); if (cl) cl.onclick = () => { const u = location.origin + location.pathname + '#r=' + id; if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => toast('Link copied'), () => prompt('Copy this link', u)); else prompt('Copy this link', u); };
   if (g('#si')) g('#si').onclick = () => authModal();
   if (g('#ed')) g('#ed').onclick = () => formModal(d);
@@ -355,6 +377,8 @@ function formModal(ex) {
   if (!ex && needName()) return;
   let sub = ex ? {name: ex.suburb, state: ex.state, pc: ex.postcode, lat: ex.lat, lng: ex.lng} : null;
   const T = new Set(ex ? ex.types : []), DRAFT = 'rm_draft';
+  let costMode = ex ? (ex.cost_display || 'exact') : 'exact';
+  const bandIdx = ex && ex.cost_low != null ? Math.max(0, BANDS.findIndex(b => b[0] === ex.cost_low)) : 3;
   let dirty = false;
   let P = ex ? ex.photos.map(p => ({...p})) : [];
   const orig = ex ? ex.photos.map(p => ({...p})) : [];
@@ -368,10 +392,18 @@ function formModal(ex) {
   <p class="hint">Suburb only. Never enter a street address.</p>
   <label class="l">Type of reno (pick up to 4)</label><div class="tchips" id="tc">${TYPES.map(t => `<button type="button" class="chip" aria-pressed="${T.has(t)}" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('')}</div>
   <div id="ow" ${T.has('Other') ? '' : 'hidden'}><label class="l">Describe your reno</label><input id="ot" maxlength="40" value="${esc(ex && ex.other_type)}" placeholder="e.g. Pool, Solar"></div>
-  <div class="row"><div><label class="l">Total cost ($)</label><input id="c" type="number" min="1" inputmode="numeric" value="${ex ? ex.cost : ''}" placeholder="45000"></div>
-  <div><label class="l">Months it took</label><input id="mo" type="number" min="1" inputmode="numeric" value="${ex ? ex.months : ''}" placeholder="3"></div></div>
+  <div class="row"><div><label class="l">Type of home (optional)</label><select id="hm"><option value="">Skip</option>${HOMES.map(h => `<option ${ex && ex.home_type === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+  <div><label class="l">Size of job (optional)</label><select id="js"><option value="">Skip</option>${Object.entries(SIZES).map(([v, l]) => `<option value="${v}" ${ex && ex.job_size === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div></div>
+  <p class="hint">Helps neighbours find renos like theirs. Light refresh: cosmetic, no walls moved. Big update: new fittings or layout changes. Structural or rebuild: walls, extensions or permits.</p>
+  <label class="l">Cost: what would you like to show?</label>
+  <div class="tchips" id="cm">${[['exact', 'Exact amount'], ['range', 'A range'], ['hidden', 'Prefer not to say']].map(([m, l]) => `<button type="button" class="chip" data-m="${m}" aria-pressed="${costMode === m}">${l}</button>`).join('')}</div>
+  <p class="hint">It’s your choice. Only what you choose to show is saved. A breakdown of where the money went needs an exact amount.</p>
+  <div id="cExact" ${costMode === 'exact' ? '' : 'hidden'}><label class="l">Total cost ($)</label><input id="c" type="number" min="1" inputmode="numeric" value="${ex && ex.cost != null ? ex.cost : ''}" placeholder="45000"></div>
+  <div id="cRange" ${costMode === 'range' ? '' : 'hidden'}><label class="l">Roughly how much?</label><select id="cb">${BANDS.map((b, i) => `<option value="${i}" ${i === bandIdx ? 'selected' : ''}>${bandLabel(b[0], b[1])}</option>`).join('')}</select></div>
+  <div class="row"><div><label class="l">Months it took</label><input id="mo" type="number" min="1" inputmode="numeric" value="${ex ? ex.months : ''}" placeholder="3"></div><div></div></div>
+  <div id="bkBlock" ${costMode === 'exact' ? '' : 'hidden'}>
   <label class="l">Where the money went (optional)</label><div id="bkRows">${Array.from({length: Math.max(5, bk.length)}, (_, i) => bkRow(bk[i])).join('')}</div>
-  <button type="button" class="btn alt sm" id="addBk">+ Add another line</button><p class="hint" id="bkSum"></p>
+  <button type="button" class="btn alt sm" id="addBk">+ Add another line</button><p class="hint" id="bkSum"></p></div>
   <label class="l">Best tradies (optional)</label><div id="trRows">${Array.from({length: Math.max(3, tr.length)}, (_, i) => trRow(tr[i])).join('')}</div>
   <button type="button" class="btn alt sm" id="addTr">+ Add another tradie</button>
   <p class="hint">Stick to your own honest experience, and use the business name where you can.</p>
@@ -387,6 +419,8 @@ function formModal(ex) {
   g('#tc').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; const t = b.dataset.t;
     if (T.has(t)) T.delete(t); else if (T.size >= 4) return toast('Up to 4 types'); else T.add(t);
     b.setAttribute('aria-pressed', T.has(t)); g('#ow').hidden = !T.has('Other'); dirty = true; saveDraft(); };
+  const applyMode = () => { g('#cm').querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', x.dataset.m === costMode)); g('#cExact').hidden = costMode !== 'exact'; g('#cRange').hidden = costMode !== 'range'; g('#bkBlock').hidden = costMode !== 'exact'; };
+  g('#cm').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; costMode = b.dataset.m; applyMode(); dirty = true; saveDraft(); };
   const grow = (box, html, max, btn, focus) => { if (box.children.length >= max) return; box.insertAdjacentHTML('beforeend', html); btn.hidden = box.children.length >= max; if (focus) box.lastElementChild.querySelector('input').focus(); };
   g('#addBk').onclick = () => { grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'), true); dirty = true; };
   g('#addTr').onclick = () => { grow(g('#trRows'), trRow(), MAXTR, g('#addTr'), true); dirty = true; };
@@ -394,13 +428,13 @@ function formModal(ex) {
     g('#bkSum').textContent = t ? `Lines add up to ${money(t)}` + (c && c !== t ? ` (total cost is ${money(c)})` : '') : ''; };
   sh.addEventListener('input', sumHint); sumHint();
   const fields = () => [...sh.querySelectorAll('#sf input:not([type=file]):not([data-a]),#sf select,#sf textarea')];
-  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({v: fields().map(f => f.value), sub, T: [...T], nb: g('#bkRows').children.length, nt: g('#trRows').children.length})); } catch (x) {} };
+  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({ver: 2, cm: costMode, v: fields().map(f => f.value), sub, T: [...T], nb: g('#bkRows').children.length, nt: g('#trRows').children.length})); } catch (x) {} };
   sh.addEventListener('input', () => { dirty = true; saveDraft(); });
   if (!ex) { try { const dr = JSON.parse(localStorage.getItem(DRAFT) || 'null');
-    if (dr && dr.v) { while (g('#bkRows').children.length < (dr.nb || 0) && g('#bkRows').children.length < MAXBK) grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'));
+    if (dr && dr.v && dr.ver === 2) { costMode = dr.cm || 'exact'; while (g('#bkRows').children.length < (dr.nb || 0) && g('#bkRows').children.length < MAXBK) grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'));
       while (g('#trRows').children.length < (dr.nt || 0) && g('#trRows').children.length < MAXTR) grow(g('#trRows'), trRow(), MAXTR, g('#addTr'));
       fields().forEach((f, i) => { if (dr.v[i] != null) f.value = dr.v[i]; }); sub = dr.sub; (dr.T || []).forEach(t => T.add(t));
-      sh.querySelectorAll('#tc .chip').forEach(b => b.setAttribute('aria-pressed', T.has(b.dataset.t))); g('#ow').hidden = !T.has('Other'); toast('Restored your unfinished draft'); } } catch (x) {} }
+      applyMode(); sh.querySelectorAll('#tc .chip').forEach(b => b.setAttribute('aria-pressed', T.has(b.dataset.t))); g('#ow').hidden = !T.has('Other'); toast('Restored your unfinished draft'); } } catch (x) {} }
   const draw = () => { g('#pc').textContent = P.length;
     g('#pg').innerHTML = P.map((p, i) => `<div class="ph ${i ? '' : 'cover-ph'}" data-i="${i}"><img src="${p.url}" alt=""><button class="rm" data-a="rm" aria-label="Remove photo">✕</button>${i ? '<button class="mc" data-a="cv">Make cover</button>' : '<button class="mc">Cover</button>'}<input data-a="cap" maxlength="100" placeholder="Caption" value="${esc(p.caption)}"></div>`).join(''); };
   g('#pg').onclick = e => { const b = e.target.closest('button'), t = e.target.closest('.ph'); if (!b || !t) return; const i = +t.dataset.i;
@@ -413,12 +447,15 @@ function formModal(ex) {
   draw();
   g('#sf').onsubmit = async e => {
     e.preventDefault(); const err = g('#ferr'), v = id => g(id).value.trim(); err.textContent = '';
-    const cost = parseInt(g('#c').value, 10), months = parseInt(g('#mo').value, 10), cd = parseInt(g('#cd').value || '0', 10);
+    const months = parseInt(g('#mo').value, 10), cd = parseInt(g('#cd').value || '0', 10);
+    let cost = null, lo = null, hi = null;
+    if (costMode === 'exact') { cost = parseInt(g('#c').value, 10); if (!(cost > 0)) return err.textContent = 'Enter the total cost, or choose a range or “Prefer not to say”.'; }
+    else if (costMode === 'range') { const b = BANDS[+g('#cb').value] || BANDS[3]; lo = b[0]; hi = b[1]; }
     if (v('#t').length < 3) return err.textContent = 'Add a headline.';
     if (!sub) return err.textContent = 'Pick a suburb from the list.';
     if (!T.size) return err.textContent = 'Pick at least one type of reno.';
     if (T.has('Other') && !v('#ot')) return err.textContent = 'Describe your reno (e.g. Pool).';
-    if (!(cost > 0) || !(months > 0)) return err.textContent = 'Enter the total cost and months it took.';
+    if (!(months > 0)) return err.textContent = 'Enter how many months it took.';
     if (!(cd >= 0)) return err.textContent = 'Council days must be 0 or more.';
     if (v('#st').length < 3) return err.textContent = 'Add your story.';
     const labels = [...sh.querySelectorAll('.bl')], amts = [...sh.querySelectorAll('.ba')];
@@ -426,7 +463,8 @@ function formModal(ex) {
     const tn = [...sh.querySelectorAll('.tn')], tt = [...sh.querySelectorAll('.tt')], tr2 = [...sh.querySelectorAll('.tr')];
     const trades = tn.map((n, i) => ({name: n.value.trim(), trade: tt[i].value.trim() || 'Trade', rating: +tr2[i].value})).filter(t => t.name);
     const row = {title: v('#t'), suburb: sub.name, state: sub.state, postcode: sub.pc, lat: sub.lat, lng: sub.lng, type: TYPES.find(t => T.has(t)), types: TYPES.filter(t => T.has(t)), other_type: T.has('Other') ? v('#ot') : null,
-      cost, months, council_days: cd, council_notes: v('#cn'), story: v('#st'), breakdown, trades};
+      cost, cost_display: costMode, cost_low: lo, cost_high: hi, home_type: g('#hm').value || null, job_size: g('#js').value || null,
+      months, council_days: cd, council_notes: v('#cn'), story: v('#st'), breakdown: costMode === 'exact' ? breakdown : [], trades};
     const btn = g('#sv'); btn.disabled = true; btn.textContent = 'Saving...';
     let newId;
     try { newId = await saveReno(ex, row, P, orig, n => btn.textContent = `Uploading photo ${n} of ${P.filter(p => p.blob).length}...`); }
@@ -460,7 +498,8 @@ async function saveReno(ex, row, P, orig, progress) {
 
 /* ---------- wiring ---------- */
 function resetFilters() {
-  S.F = {sub: null, q: '', types: new Set(), max: 500, sort: 'new', mine: false};
+  S.F = {sub: null, q: '', types: new Set(), max: 500, sort: 'new', mine: false, home: '', size: ''};
+  $('#home').value = ''; $('#size').value = '';
   $('#subQ').value = ''; $('#subClr').hidden = true; $('#q').value = ''; $('#max').value = 500; $('#sort').value = 'new';
   document.querySelectorAll('#chips .chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
@@ -470,6 +509,12 @@ function init() {
   let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.F.q = e.target.value.trim(); render(true); }, 200); };
   $('#sort').onchange = e => { S.F.sort = e.target.value; render(); };
   $('#max').oninput = e => { S.F.max = +e.target.value; render(true); };
+  $('#home').innerHTML += HOMES.map(h => `<option>${esc(h)}</option>`).join('');
+  $('#size').innerHTML += Object.entries(SIZES).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+  $('#home').onchange = e => { S.F.home = e.target.value; render(true); };
+  $('#size').onchange = e => { S.F.size = e.target.value; render(true); };
+  $('#moreBtn').onclick = () => { const open = $('#more').hidden; $('#more').hidden = !open; $('#moreBtn').setAttribute('aria-expanded', open); };
+  $('#clrMore').onclick = () => { S.F.max = 500; S.F.home = ''; S.F.size = ''; $('#max').value = 500; $('#home').value = ''; $('#size').value = ''; render(true); };
   typeahead($('#subQ'), $('#subAc'), s => { S.F.sub = {name: s[0], state: s[1]}; $('#subQ').value = `${s[0]}, ${s[1]}`; $('#subClr').hidden = false; render(true); }, () => { $('#subClr').hidden = !$('#subQ').value; if (S.F.sub) { S.F.sub = null; render(true); } });
   $('#subClr').onclick = () => { S.F.sub = null; $('#subQ').value = ''; $('#subClr').hidden = true; render(true); };
   const view = m => { $('#main').classList.toggle('map', m); document.body.classList.toggle('mapview', m); $('#vList').setAttribute('aria-pressed', !m); $('#vMap').setAttribute('aria-pressed', m); if (m && map) setTimeout(() => { map.invalidateSize(); render(true); }, 50); };
