@@ -137,3 +137,7 @@ form .row3{display:grid;grid-template-columns:1.4fr 1fr 70px;gap:8px;margin:6px 
 body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
 .toast{bottom:calc(88px + env(safe-area-inset-bottom,0px))}
 }
+
+/* softer pins on the Voyager basemap */
+.pin{border-width:2.5px;box-shadow:0 3px 10px rgba(0,0,0,.22);transition:transform .12s}.pinwrap:hover .pin{transform:translate(-50%,-50%) scale(1.1)}
+.leaflet-container{font-family:'DM Sans',sans-serif;background:#f4efe8}
