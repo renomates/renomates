@@ -155,7 +155,7 @@ const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], ht
 function initMap() {
   if (map || typeof L === 'undefined') return;
   map = L.map('map').setView([-25.3, 133.8], 4);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {subdomains: 'abcd', maxZoom: 20, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
   layer = L.layerGroup().addTo(map);
 }
 function drawMap(list, fit) {
