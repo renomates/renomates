@@ -2,6 +2,16 @@
 (() => {
 'use strict';
 const C = window.RENOMATES_CONFIG || {};
+// Google Analytics 4 (optional). Only loads if GA_MEASUREMENT_ID is set in config.js. No personal info is ever sent in events.
+const GA = /^G-[A-Z0-9]+$/.test(C.GA_MEASUREMENT_ID || '') ? C.GA_MEASUREMENT_ID : '';
+if (GA) {
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  gtag('js', new Date());
+  gtag('config', GA, {anonymize_ip: true, allow_google_signals: false, allow_ad_personalization_signals: false});
+  const gs = document.createElement('script'); gs.async = true; gs.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA; document.head.appendChild(gs);
+}
+const track = (name, params) => { try { if (GA && window.gtag) gtag('event', name, params || {}); } catch (e) {} };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const TYPES = ['Kitchen','Bathroom','Extension','Painting','Floors','Laundry','Bedrooms','Living and Dining','Exterior','Full reno','Other'];
@@ -137,7 +147,7 @@ function filtered() {
 function card(d) {
   const c = COL[d.type] || COL.Other, ph = d.photos[0];
   const bg = ph ? `url(&quot;${ph.thumb}&quot;) center/cover` : `linear-gradient(145deg,${c[0]},${c[1]})`;
-  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><h3 style="font-size:19px;line-height:1.25;margin:0 0 4px">${esc(d.title)}</h3><div style="font-size:14px;font-weight:${noCost(d) ? 500 : 700};margin-bottom:3px;${noCost(d) ? 'color:var(--mute)' : ''}">${noCost(d) ? 'Cost not shared' : esc(priceLabel(d)) + ' spent'}</div><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
+  return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><h3 style="font-size:19px;line-height:1.25;margin:0 0 4px">${esc(d.title)}</h3><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
 }
 let map, layer, markers = {}, firstFit = true;
 const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0; return [((h % 1000) / 1000 - .5) * .006, (((h >> 10) % 1000) / 1000 - .5) * .006]; };
@@ -152,7 +162,7 @@ function drawMap(list, fit) {
   initMap(); if (!map) return; layer.clearLayers(); markers = {};
   const pts = [];
   list.forEach(d => { const j = jit(d.id), ll = [d.lat + j[0], d.lng + j[1]]; pts.push(ll);
-    const m = L.marker(ll, {icon: pinIcon(d, S.sel === d.id), keyboard: true, title: d.title + ' · ' + priceLabel(d)}).on('click', () => openReno(d.id)).addTo(layer);
+    const m = L.marker(ll, {icon: pinIcon(d, S.sel === d.id), keyboard: true, title: d.title}).on('click', () => openReno(d.id)).addTo(layer);
     m.on('mouseover', () => setSel(d.id)); markers[d.id] = m; });
   if (fit && pts.length) map.fitBounds(pts, {padding: [40, 40], maxZoom: firstFit && pts.length > 1 ? 13 : 14});
   else if (fit) map.setView([-25.3, 133.8], 4);
@@ -209,7 +219,7 @@ function authModal(mode, msg) {
     if (mode === 'in') { const {error} = await sb.auth.signInWithPassword({email: em, password: pw}); if (error) return err.textContent = error.message; $('#modal').innerHTML = ''; }
     else { const {data, error} = await sb.auth.signUp({email: em, password: pw, options: {data: {full_name: $('#an').value.trim()}, emailRedirectTo: location.origin + location.pathname}});
       if (error) return err.textContent = error.message;
-      if (!data.session) { $('#ainfo').textContent = 'Check your email for a confirmation link, then sign in.'; return; } $('#modal').innerHTML = ''; }
+      track('sign_up'); if (!data.session) { $('#ainfo').textContent = 'Check your email for a confirmation link, then sign in.'; return; } $('#modal').innerHTML = ''; }
   };
 }
 function resetRequestModal(prefill) {
@@ -307,6 +317,7 @@ async function toggleFav(id) {
   had ? S.favs.delete(id) : S.favs.add(id); updateNav();
   document.querySelectorAll(`.hb[data-fav="${id}"]`).forEach(x => x.classList.toggle('on', !had));
   const {error} = had ? await sb.from('favourites').delete().eq('reno_id', id) : await sb.from('favourites').insert({reno_id: id});
+  if (!had) track('save_reno');
   if (error) { had ? S.favs.add(id) : S.favs.delete(id); updateNav(); render(); return toast('Could not update saved renos'); }
   toast(had ? 'Removed from saved' : 'Saved to your favourites');
   if (S.view === 'saved') renderSaved();
@@ -375,7 +386,7 @@ async function toggleTradie(tk, renoId, idx) {
   S.bookKeys.add(tk); S.book = [{...row, created_at: new Date().toISOString()}, ...S.book]; paintTradies();
   const {error} = await sb.from('saved_tradies').insert(row);
   if (error && error.code !== '23505') { S.book = S.book.filter(b => b.tkey !== tk); S.bookKeys.delete(tk); paintTradies(); return toast('Could not save: ' + error.message); }
-  toast('Saved to your tradie book');
+  track('tradie_saved'); toast('Saved to your tradie book');
 }
 
 const km = (a, b) => { const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLn = (b.lng - a.lng) * r, x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLn / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
@@ -388,6 +399,7 @@ function similar(d) {
   }).filter(Boolean).sort((a, b) => b.score - a.score || a.dist - b.dist).slice(0, 3).map(x => x.r);
 }
 function openReno(id) {
+  track('view_reno');
   const d = S.renos.find(r => r.id === id); if (!d) return; S.sel = id;
   history.replaceState(null, '', '#r=' + id);
   const c = COL[d.type] || COL.Other, mine = S.user && d.user_id === S.user.id, mx = Math.max(1, ...(d.breakdown || []).map(b => b.amount));
@@ -442,7 +454,7 @@ async function startConvo(d, text) {
   if (!id) { const {data, error} = await sb.from('conversations').insert({reno_id: d.id, owner_id: d.user_id}).select('id').single(); if (error) return toast(error.code === '42501' ? 'This member can’t be messaged right now.' : 'Could not start chat: ' + error.message); id = data.id; }
   const {error} = await sb.from('messages').insert({conversation_id: id, body: text.slice(0, 1000)});
   if (error) return toast(error.code === '42501' ? 'This member can’t be messaged right now.' : 'Message not sent: ' + error.message);
-  await loadConvos(); threadModal(id);
+  track('message_sent'); await loadConvos(); threadModal(id);
 }
 async function blockMember(id, name, after) {
   if (!S.user) return authModal();
@@ -604,7 +616,7 @@ function formModal(ex) {
     try { newId = await saveReno(ex, row, P, orig, n => btn.textContent = `Uploading photo ${n} of ${P.filter(p => p.blob).length}...`); }
     catch (x) { if (x.saved) loadRenos(); btn.disabled = false; btn.textContent = ex ? 'Save changes' : 'Publish reno'; return err.textContent = x.message || 'Something went wrong. Please try again.'; }
     try { localStorage.removeItem(DRAFT); } catch (x) {}
-    $('#modal').innerHTML = ''; toast(ex ? 'Changes saved' : 'Published. Thanks for sharing!'); await loadRenos();
+    $('#modal').innerHTML = ''; track(ex ? 'reno_updated' : 'reno_published'); toast(ex ? 'Changes saved' : 'Published. Thanks for sharing!'); await loadRenos();
     if (!ex) { resetFilters(); render(true); } if (newId) openReno(newId);
   };
 }
@@ -634,14 +646,13 @@ async function saveReno(ex, row, P, orig, progress) {
 function resetFilters() {
   S.F = {sub: null, q: '', types: new Set(), max: 500, sort: 'new', mine: false, home: '', size: ''};
   $('#home').value = ''; $('#size').value = '';
-  $('#subQ').value = ''; $('#subClr').hidden = true; $('#q').value = ''; $('#max').value = 500; $('#sort').value = 'new';
+  $('#subQ').value = ''; $('#subClr').hidden = true; $('#q').value = ''; $('#max').value = 500;
   document.querySelectorAll('#chips .chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
 function init() {
   $('#chips').innerHTML = TYPES.map(t => `<button class="chip" aria-pressed="false" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('');
   $('#chips').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; if (b.dataset.mine) { S.F.mine = !S.F.mine; b.setAttribute('aria-pressed', S.F.mine); return render(true); } const t = b.dataset.t; S.F.types.has(t) ? S.F.types.delete(t) : S.F.types.add(t); b.setAttribute('aria-pressed', S.F.types.has(t)); render(true); };
   let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.F.q = e.target.value.trim(); render(true); }, 200); };
-  $('#sort').onchange = e => { S.F.sort = e.target.value; render(); };
   $('#max').oninput = e => { S.F.max = +e.target.value; render(true); };
   $('#home').innerHTML += HOMES.map(h => `<option>${esc(h)}</option>`).join('');
   $('#size').innerHTML += Object.entries(SIZES).map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
