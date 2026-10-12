@@ -25,18 +25,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/styles.css?v=15">
+<link rel="stylesheet" href="css/styles.css?v=17">
 </head>
 <body>
 <header>
   <a class="logo" href="./" aria-label="Renomates home"><img class="lg" src="assets/logo.svg" alt="" width="35" height="36">Renomates</a>
+  <nav id="nav" aria-label="Main">
+    <a class="nv" id="exBtn" href="#/" data-v="explore" aria-current="page"><i>🔎</i><span>Explore</span></a>
+    <a class="nv" id="mineBtn" href="#/mine" data-v="mine"><i>🏠</i><span>My renos</span></a>
+    <a class="nv" id="bookBtn" href="#/book" data-v="book"><i>🧰</i><span>Tradie book</span></a>
+    <a class="nv" id="favBtn" href="#/saved" data-v="saved"><i>♥</i><span>Saved</span><b id="favN" hidden></b></a>
+    <button class="nv" id="msgBtn" type="button"><i>✉</i><span>Messages</span><b id="msgN" hidden></b></button>
+  </nav>
   <div class="sp"></div>
-  <button class="btn alt nb" id="favBtn" aria-label="Saved renos" hidden>♥<span class="lbl"> Saved</span><b id="favN" hidden></b></button>
-  <button class="btn alt nb" id="msgBtn" aria-label="Messages" hidden>✉<span class="lbl"> Messages</span><b id="msgN" hidden></b></button>
   <button class="btn" id="shareBtn">Share<span class="lbl"> your reno</span></button>
   <button class="av" id="meBtn" aria-label="Sign in or open your profile">?</button>
 </header>
 
+<div id="exploreView">
 <div class="hero">
   <h1>Renovating is easier when you’ve got mates.</h1>
   <p>Get the real story from people who’ve renovated before you — from what things cost and who to hire, to council headaches, lessons learned and what they’d do differently.</p>
@@ -69,6 +75,8 @@
   <section class="lw"><p class="count" id="count" aria-live="polite"></p><div class="list" id="list"></div></section>
   <section class="mapw"><div id="map" aria-label="Map of renovations"></div></section>
 </main>
+</div>
+<section id="pageView" class="page" hidden></section>
 
 <footer class="foot">
   <p class="flinks"><a href="terms.html">Terms of use</a> · <a href="privacy.html">Privacy policy</a> · <a href="mailto:hello@renomates.co">Contact</a></p>
@@ -82,6 +90,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="js/config.js"></script>
-<script src="js/app.js?v=16"></script>
+<script src="js/app.js?v=17"></script>
 </body>
 </html>
