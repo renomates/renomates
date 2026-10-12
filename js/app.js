@@ -18,7 +18,7 @@ const sb = configured ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KE
 
 const DEBUG = /[?&]debug=1/.test(location.search);
 let diag = 'not loaded yet';
-const S = {blocks: new Map(), user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
+const S = {view: 'explore', authReady: false, wantView: null, book: [], bookKeys: new Set(), blocks: new Map(), user:null, profile:null, renos:[], favs:new Set(), convos:[], seen:{}, sel:null, curThread:null,
   F:{sub:null, q:'', types:new Set(), max:500, sort:'new', mine:false, home:'', size:''}};
 try { S.seen = JSON.parse(localStorage.getItem('rm_seen') || '{}'); } catch (e) {}
 
@@ -28,6 +28,13 @@ const effCost = d => d.cost != null ? d.cost : d.cost_low != null ? (d.cost_low 
 const priceLabel = d => d.cost != null ? k(d.cost) : d.cost_low != null ? bandLabel(d.cost_low, d.cost_high) : 'Cost not shared';
 const noCost = d => d.cost == null && d.cost_low == null;
 const money = c => '$' + Number(c).toLocaleString('en-AU');
+function safeUrl(u) {
+  if (!u) return ''; let s = String(u).trim(); if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  try { const x = new URL(s); if (!/^https?:$/.test(x.protocol) || !x.hostname.includes('.') || x.username || x.password) return ''; return x.href.length <= 200 ? x.href : ''; } catch (e) { return ''; }
+}
+const siteHost = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+const tkey = t => { const u = safeUrl(t.website), h = u ? siteHost(u).toLowerCase() : ''; return (h ? 'w:' + h : 'n:' + String(t.name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + '|' + String(t.trade || '').toLowerCase().trim()).slice(0, 160); };
 const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
 function toast(t) { const e = $('#toast'); e.innerHTML = `<div class="toast">${esc(t)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => e.innerHTML = '', 3200); }
 
@@ -88,15 +95,18 @@ async function loadRenos() {
   const m = location.hash.match(/^#r=([0-9a-f-]{36})$/); if (m && S.renos.find(r => r.id === m[1])) openReno(m[1]);
 }
 async function loadMine() {
-  if (!S.user) { S.favs = new Set(); S.convos = []; S.blocks = new Map(); updateNav(); render(); return; }
-  const [p, f, bl] = await Promise.all([
+  if (!S.user) { S.favs = new Set(); S.convos = []; S.blocks = new Map(); S.book = []; S.bookKeys = new Set(); updateNav(); render(); route(); return; }
+  const [p, f, bl, tb] = await Promise.all([
     sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle(),
     sb.from('favourites').select('reno_id'),
-    sb.from('blocks').select('blocked_id, p:profiles!blocked_id(name)')]);
+    sb.from('blocks').select('blocked_id, p:profiles!blocked_id(name)'),
+    sb.from('saved_tradies').select('*').order('created_at', {ascending: false})]);
+  S.book = (tb && tb.data) || []; S.bookKeys = new Set(S.book.map(x => x.tkey));
   S.blocks = new Map(((bl && bl.data) || []).map(r => [r.blocked_id, (r.p && r.p.name) || 'A member']));
   S.profile = p.data || {id: S.user.id, name: '', suburb: '', bio: '', instagram: '', email_notifications: true};
   S.favs = new Set((f.data || []).map(x => x.reno_id));
   await loadConvos(); render(); updateNav();
+  if (S.wantView) { const w = S.wantView; S.wantView = null; location.hash = w; } else route();
   if (location.hash === '#messages') { history.replaceState(null, '', location.pathname + location.search); inboxModal(); }
 }
 async function loadConvos() {
@@ -110,8 +120,6 @@ const otherId = c => c.asker_id === S.user.id ? c.owner_id : c.asker_id;
 const unread = c => { const m = c.messages[0]; return m.sender_id !== S.user.id && new Date(m.created_at) > new Date(S.seen[c.id] || 0); };
 function updateNav() {
   const on = !!S.user;
-  $('#favBtn').hidden = !on; $('#msgBtn').hidden = !on; $('#mineChip').hidden = !on;
-  if (!on && S.F.mine) { S.F.mine = false; $('#mineChip').setAttribute('aria-pressed', 'false'); }
   $('#favN').textContent = S.favs.size; $('#favN').hidden = !S.favs.size;
   const u = on ? S.convos.filter(c => !S.blocks.has(otherId(c))).filter(unread).length : 0; $('#msgN').textContent = u; $('#msgN').hidden = !u;
   $('#meBtn').textContent = on ? ((S.profile && S.profile.name) || S.user.email || '?')[0].toUpperCase() : '?';
@@ -171,7 +179,7 @@ function render(fit) {
 function shell(html, onClose, guard) {
   const m = $('#modal');
   m.innerHTML = `<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true" tabindex="-1" style="outline:none"><div class="xbar" style="position:sticky;top:0;height:0;z-index:20"><button class="x" aria-label="Close" style="position:absolute;right:14px;top:14px;width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.96);color:#1d1b3a;font-size:18px;line-height:1;box-shadow:0 2px 10px rgba(0,0,0,.28);cursor:pointer;padding:0">✕</button></div>${html}</div></div>`;
-  const close = () => { m.innerHTML = ''; S.curThread = null; if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search); onClose && onClose(); };
+  const close = () => { m.innerHTML = ''; S.curThread = null; if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname + location.search + viewHash()); onClose && onClose(); };
   $('#ov').onclick = e => { if (e.target.closest('.x')) { if (guard && !guard()) return; close(); } else if (e.target.id === 'ov' && !guard) close(); };
   m.querySelector('.sheet').focus();
   return m.querySelector('.sheet');
@@ -301,16 +309,75 @@ async function toggleFav(id) {
   const {error} = had ? await sb.from('favourites').delete().eq('reno_id', id) : await sb.from('favourites').insert({reno_id: id});
   if (error) { had ? S.favs.add(id) : S.favs.delete(id); updateNav(); render(); return toast('Could not update saved renos'); }
   toast(had ? 'Removed from saved' : 'Saved to your favourites');
-  if ($('#modal h2[data-v=saved]')) savedModal();
-}
-function savedModal() {
-  const l = S.renos.filter(d => S.favs.has(d.id));
-  const sh = shell(head('Saved renos', l.length + ' saved') + `<div class="bd"><div class="list" style="margin-top:16px">${l.length ? l.map(card).join('') : '<div class="empty"><div style="font-size:42px">♥</div><h3>Nothing saved yet</h3><p class="sub">Tap the heart on any reno to keep it here.</p></div>'}</div></div>`);
-  sh.querySelector('h2').dataset.v = 'saved';
-  sh.querySelector('.bd').onclick = e => { if (e.target.closest('.hb')) return; const c = e.target.closest('.card'); if (c) openReno(c.dataset.id); };
+  if (S.view === 'saved') renderSaved();
 }
 
 /* ---------- reno detail ---------- */
+
+/* ---------- pages: My renos, Tradie book, Saved ---------- */
+const viewHash = () => ({mine: '#/mine', book: '#/book', saved: '#/saved'}[S.view] || '');
+function currentView() { const m = location.hash.match(/^#\/(mine|book|saved)$/); return m ? m[1] : 'explore'; }
+function route() {
+  let v = currentView();
+  if (v !== 'explore' && !S.user) {
+    if (!S.authReady) return;
+    const want = v; S.wantView = location.hash; history.replaceState(null, '', location.pathname + location.search); v = 'explore';
+    authModal('in', 'Sign in to see your ' + ({mine: 'renos', book: 'tradie book', saved: 'saved renos'}[want]) + '.');
+  }
+  const changed = S.view !== v; S.view = v;
+  $('#exploreView').hidden = v !== 'explore'; $('#pageView').hidden = v === 'explore';
+  document.querySelectorAll('#nav .nv[data-v]').forEach(a => a.setAttribute('aria-current', a.dataset.v === v ? 'page' : 'false'));
+  if (v === 'mine') renderMine(); else if (v === 'book') renderBook(); else if (v === 'saved') renderSaved();
+  else if (map) setTimeout(() => map.invalidateSize(), 60);
+  if (changed) window.scrollTo(0, 0);
+}
+function renderMine() {
+  const mine = S.renos.filter(d => S.user && d.user_id === S.user.id);
+  $('#pageView').innerHTML = `<div class="pagehead"><div><h1 class="pt">My renos</h1><p class="sub">${mine.length ? mine.length + (mine.length === 1 ? ' reno' : ' renos') + ' shared. Tap one to edit it, copy its link or delete it.' : 'Your renos will live here.'}</p></div><button class="btn" data-act="share">Share a reno</button></div>
+  <div class="list">${mine.length ? mine.map(card).join('') : '<div class="empty"><img class="lg" src="assets/logo.svg" width="62" height="64" alt=""><h3>You haven’t shared a reno yet</h3><p class="sub">Share yours and save a neighbour time and money. It takes about 3 minutes.</p></div>'}</div>`;
+}
+function renderSaved() {
+  const l = S.renos.filter(d => S.favs.has(d.id));
+  $('#pageView').innerHTML = `<div class="pagehead"><div><h1 class="pt">Saved renos</h1><p class="sub">${l.length} saved. Only you can see this.</p></div></div>
+  <div class="list">${l.length ? l.map(card).join('') : '<div class="empty"><div style="font-size:42px">♥</div><h3>Nothing saved yet</h3><p class="sub">Tap the heart on any reno to keep it here.</p></div>'}</div>`;
+}
+function tradieStats(key) {
+  const owners = new Set(); let sum = 0, cnt = 0;
+  S.renos.forEach(r => (r.trades || []).forEach(t => { if (tkey(t) === key) { owners.add(r.user_id); sum += t.rating || 0; cnt++; } }));
+  return {neighbours: owners.size, avg: cnt ? sum / cnt : 0};
+}
+function renderBook() {
+  const kinds = [...new Set(S.book.map(b => b.trade).filter(Boolean))].sort(), f = S.bookTrade || '';
+  const items = S.book.filter(b => !f || b.trade === f).map(b => {
+    const reno = S.renos.find(r => r.id === b.reno_id), live = reno && (reno.trades || []).find(t => tkey(t) === b.tkey);
+    const name = (live && live.name) || b.name, trade = (live && live.trade) || b.trade, site = safeUrl((live && live.website) || b.website), note = live && live.note, st = tradieStats(b.tkey);
+    return `<div class="tcard"><div style="min-width:0"><b class="tn2">${esc(name)}</b>${trade ? `<span class="tag">${esc(trade)}</span>` : ''}
+      ${site ? `<div><a class="site" href="${esc(site)}" target="_blank" rel="noopener noreferrer nofollow ugc">🔗 ${esc(siteHost(site))}</a></div>` : ''}
+      ${note ? `<div class="note">“${esc(note)}”</div>` : ''}
+      <div class="sub" style="margin-top:6px">${st.neighbours ? `★ ${st.avg.toFixed(1)} · recommended by ${st.neighbours} ${st.neighbours === 1 ? 'neighbour' : 'neighbours'}` : 'Not currently listed on a reno'}</div>
+      ${reno ? `<div class="sub" style="margin-top:2px">Saved from <button class="link" data-reno="${esc(reno.id)}" style="text-align:left">${esc(reno.title)}</button> in ${esc(reno.suburb)}</div>` : ''}</div>
+      <button class="tb on" data-tk="${esc(b.tkey)}" aria-label="Remove ${esc(name)} from your tradie book" title="Remove from your tradie book">♥</button></div>`;
+  }).join('');
+  $('#pageView').innerHTML = `<div class="pagehead"><div><h1 class="pt">Tradie book</h1><p class="sub">Tradies you’ve saved from your neighbours’ renos. Only you can see this.</p></div>${kinds.length > 1 ? `<select id="bkTrade" aria-label="Filter by trade"><option value="">All trades</option>${kinds.map(t => `<option ${t === f ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>` : ''}</div>
+  ${S.book.length ? (items || '<p class="sub" style="margin-top:16px">No saved tradies for that trade.</p>') : '<div class="empty" style="margin-top:16px"><div style="font-size:42px">🧰</div><h3>Your tradie book is empty</h3><p class="sub">Open a reno and tap the ♥ next to a tradie to save them here. Then you’ll always know who your neighbours would call.</p></div>'}`;
+}
+const paintTradies = () => { document.querySelectorAll('.tb[data-tk]').forEach(b => b.classList.toggle('on', S.bookKeys.has(b.dataset.tk))); if (S.view === 'book') renderBook(); };
+async function toggleTradie(tk, renoId, idx) {
+  if (!S.user) return authModal();
+  if (S.bookKeys.has(tk)) {
+    const prev = S.book; S.bookKeys.delete(tk); S.book = S.book.filter(b => b.tkey !== tk); paintTradies();
+    const {error} = await sb.from('saved_tradies').delete().eq('tkey', tk);
+    if (error) { S.book = prev; S.bookKeys.add(tk); paintTradies(); return toast('Could not remove: ' + error.message); }
+    return toast('Removed from your tradie book');
+  }
+  const d = S.renos.find(r => r.id === renoId), t = d && (d.trades || [])[idx]; if (!t) return;
+  const row = {tkey: tk, name: t.name, trade: t.trade || '', website: safeUrl(t.website) || null, reno_id: renoId};
+  S.bookKeys.add(tk); S.book = [{...row, created_at: new Date().toISOString()}, ...S.book]; paintTradies();
+  const {error} = await sb.from('saved_tradies').insert(row);
+  if (error && error.code !== '23505') { S.book = S.book.filter(b => b.tkey !== tk); S.bookKeys.delete(tk); paintTradies(); return toast('Could not save: ' + error.message); }
+  toast('Saved to your tradie book');
+}
+
 const km = (a, b) => { const r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLn = (b.lng - a.lng) * r, x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLn / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
 function similar(d) {
   return S.renos.filter(r => r.id !== d.id).map(r => {
@@ -332,7 +399,7 @@ function openReno(id) {
   ${(d.home_type || d.job_size) ? `<div class="meta" style="margin-top:12px">${d.home_type ? `<span class="tag">🏠 ${esc(d.home_type)}</span>` : ''}${d.job_size ? `<span class="tag">🔧 ${esc(SIZES[d.job_size])}</span>` : ''}</div>` : ''}
   <h3>The story</h3><p style="margin:0;white-space:pre-wrap">${esc(d.story)}</p>
   ${(d.breakdown || []).length ? `<h3>Where the money went</h3>${d.breakdown.map(b => `<div class="bk"><span>${esc(b.label)}</span><b style="width:${Math.max(6, b.amount / mx * 100)}%"></b><em>${k(b.amount)}</em></div>`).join('')}` : ''}
-  ${(d.trades || []).length ? `<h3>Trades worth calling</h3>${d.trades.map(t => `<div class="trade"><span><b>${esc(t.name)}</b><div class="sub">${esc(t.trade)}</div></span><span style="color:var(--coral)">${stars(t.rating || 0)}</span></div>`).join('')}` : ''}
+  ${(d.trades || []).length ? `<h3>Trades worth calling</h3>${d.trades.map((t, i) => { const site = safeUrl(t.website), k2 = tkey(t); return `<div class="trade"><div class="tl"><b>${esc(t.name)}</b><div class="sub">${esc(t.trade)}</div>${site ? `<a class="site" href="${esc(site)}" target="_blank" rel="noopener noreferrer nofollow ugc">🔗 ${esc(siteHost(site))}</a>` : ''}${t.note ? `<div class="note">“${esc(t.note)}”</div>` : ''}</div><div class="tside"><span style="color:var(--coral)">${stars(t.rating || 0)}</span><button class="tb ${S.bookKeys.has(k2) ? 'on' : ''}" data-tk="${esc(k2)}" data-ri="${esc(d.id)}" data-ti="${i}" aria-label="Save ${esc(t.name)} to your tradie book" title="Save to your tradie book">♥</button></div></div>`; }).join('')}` : ''}
   <h3>Working with the council</h3><div class="cn"><div><div class="n disp">${d.council_days || 0}</div><div class="sub">days</div></div><div><b>${d.council_days ? 'Approval needed' : 'No permit needed'}</b><div class="sub">${esc(d.council_notes || '')}</div></div></div>
   ${simHtml}
   <p class="hint" style="margin-top:14px">Costs and reviews are self-reported and not verified.</p>
@@ -448,7 +515,7 @@ function formModal(ex) {
   const orig = ex ? ex.photos.map(p => ({...p})) : [];
   const bk = (ex && ex.breakdown) || [], tr = (ex && ex.trades) || [];
   const bkRow = b => `<div class="row"><input class="bl" maxlength="30" placeholder="e.g. Cabinetry" value="${esc(b && b.label)}"><input class="ba" type="number" min="0" inputmode="numeric" placeholder="$" value="${b && b.amount ? b.amount : ''}"></div>`;
-  const trRow = t => `<div class="row3"><input class="tn" maxlength="50" placeholder="Name or business" value="${esc(t && t.name)}"><input class="tt" maxlength="30" placeholder="Trade" value="${esc(t && t.trade)}"><select class="tr">${[5, 4, 3, 2, 1].map(n => `<option value="${n}" ${t && t.rating === n ? 'selected' : ''}>${n}★</option>`).join('')}</select></div>`;
+  const trRow = t => `<div class="trow"><div class="row3"><input class="tn" maxlength="50" placeholder="Name or business" value="${esc(t && t.name)}"><input class="tt" maxlength="30" placeholder="Trade" value="${esc(t && t.trade)}"><select class="tr">${[5, 4, 3, 2, 1].map(n => `<option value="${n}" ${t && t.rating === n ? 'selected' : ''}>${n}★</option>`).join('')}</select></div><div class="row"><input class="tw" maxlength="200" inputmode="url" autocapitalize="off" placeholder="Website (optional)" value="${esc(t && t.website)}"><input class="tnote" maxlength="140" placeholder="What made them great? (optional)" value="${esc(t && t.note)}"></div></div>`;
   const MAXBK = 15, MAXTR = 10;
   const sh = shell(head(ex ? 'Edit your reno' : 'Share your reno', 'Help the next neighbour budget with confidence.', 'var(--mint),var(--sun)') + `<div class="bd"><form id="sf" novalidate>
   <label class="l">Headline</label><input id="t" maxlength="120" required value="${esc(ex && ex.title)}" placeholder="e.g. Open-plan kitchen in a 1950s brick home">
@@ -470,7 +537,7 @@ function formModal(ex) {
   <button type="button" class="btn alt sm" id="addBk">+ Add another line</button><p class="hint" id="bkSum"></p></div>
   <label class="l">Best tradies (optional)</label><div id="trRows">${Array.from({length: Math.max(3, tr.length)}, (_, i) => trRow(tr[i])).join('')}</div>
   <button type="button" class="btn alt sm" id="addTr">+ Add another tradie</button>
-  <p class="hint">Stick to your own honest experience, and use the business name where you can.</p>
+  <p class="hint">Stick to your own honest experience and use the business name where you can. Add their website so neighbours can find them. Only link to the tradie’s own business website or page.</p>
   <div class="row"><div><label class="l">Council approval (days, 0 if none)</label><input id="cd" type="number" min="0" inputmode="numeric" value="${ex ? ex.council_days : 0}"></div><div></div></div>
   <label class="l">Council notes (optional)</label><input id="cn" maxlength="600" value="${esc(ex && ex.council_notes)}" placeholder="What was it like?">
   <label class="l">Your story</label><textarea id="st" rows="4" maxlength="3000" placeholder="What would you tell a neighbour?">${esc(ex && ex.story)}</textarea>
@@ -492,10 +559,10 @@ function formModal(ex) {
     g('#bkSum').textContent = t ? `Lines add up to ${money(t)}` + (c && c !== t ? ` (total cost is ${money(c)})` : '') : ''; };
   sh.addEventListener('input', sumHint); sumHint();
   const fields = () => [...sh.querySelectorAll('#sf input:not([type=file]):not([data-a]),#sf select,#sf textarea')];
-  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({ver: 2, cm: costMode, v: fields().map(f => f.value), sub, T: [...T], nb: g('#bkRows').children.length, nt: g('#trRows').children.length})); } catch (x) {} };
+  const saveDraft = () => { if (ex) return; try { localStorage.setItem(DRAFT, JSON.stringify({ver: 3, cm: costMode, v: fields().map(f => f.value), sub, T: [...T], nb: g('#bkRows').children.length, nt: g('#trRows').children.length})); } catch (x) {} };
   sh.addEventListener('input', () => { dirty = true; saveDraft(); });
   if (!ex) { try { const dr = JSON.parse(localStorage.getItem(DRAFT) || 'null');
-    if (dr && dr.v && dr.ver === 2) { costMode = dr.cm || 'exact'; while (g('#bkRows').children.length < (dr.nb || 0) && g('#bkRows').children.length < MAXBK) grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'));
+    if (dr && dr.v && dr.ver === 3) { costMode = dr.cm || 'exact'; while (g('#bkRows').children.length < (dr.nb || 0) && g('#bkRows').children.length < MAXBK) grow(g('#bkRows'), bkRow(), MAXBK, g('#addBk'));
       while (g('#trRows').children.length < (dr.nt || 0) && g('#trRows').children.length < MAXTR) grow(g('#trRows'), trRow(), MAXTR, g('#addTr'));
       fields().forEach((f, i) => { if (dr.v[i] != null) f.value = dr.v[i]; }); sub = dr.sub; (dr.T || []).forEach(t => T.add(t));
       applyMode(); sh.querySelectorAll('#tc .chip').forEach(b => b.setAttribute('aria-pressed', T.has(b.dataset.t))); g('#ow').hidden = !T.has('Other'); toast('Restored your unfinished draft'); } } catch (x) {} }
@@ -525,7 +592,10 @@ function formModal(ex) {
     const labels = [...sh.querySelectorAll('.bl')], amts = [...sh.querySelectorAll('.ba')];
     const breakdown = labels.map((l, i) => ({label: l.value.trim(), amount: parseInt(amts[i].value, 10)})).filter(b => b.label && b.amount > 0);
     const tn = [...sh.querySelectorAll('.tn')], tt = [...sh.querySelectorAll('.tt')], tr2 = [...sh.querySelectorAll('.tr')];
-    const trades = tn.map((n, i) => ({name: n.value.trim(), trade: tt[i].value.trim() || 'Trade', rating: +tr2[i].value})).filter(t => t.name);
+    const tw = [...sh.querySelectorAll('.tw')], tnote = [...sh.querySelectorAll('.tnote')]; let badSite = '';
+    const trades = tn.map((n, i) => { const raw = tw[i].value.trim(), u = raw ? safeUrl(raw) : '', note = tnote[i].value.trim(); if (raw && !u) badSite = n.value.trim() || 'one of your tradies';
+      return {name: n.value.trim(), trade: tt[i].value.trim() || 'Trade', rating: +tr2[i].value, ...(u ? {website: u} : {}), ...(note ? {note} : {})}; }).filter(t => t.name);
+    if (badSite) return err.textContent = 'The website for ' + badSite + ' doesn’t look right. Try something like www.example.com.au';
     const row = {title: v('#t'), suburb: sub.name, state: sub.state, postcode: sub.pc, lat: sub.lat, lng: sub.lng, type: TYPES.find(t => T.has(t)), types: TYPES.filter(t => T.has(t)), other_type: T.has('Other') ? v('#ot') : null,
       cost, cost_display: costMode, cost_low: lo, cost_high: hi, home_type: g('#hm').value || null, job_size: g('#js').value || null,
       months, council_days: cd, council_notes: v('#cn'), story: v('#st'), breakdown: costMode === 'exact' ? breakdown : [], trades};
@@ -568,7 +638,7 @@ function resetFilters() {
   document.querySelectorAll('#chips .chip').forEach(b => b.setAttribute('aria-pressed', 'false'));
 }
 function init() {
-  $('#chips').innerHTML = '<button class="chip" id="mineChip" aria-pressed="false" data-mine="1" hidden>🏠 My renos</button>' + TYPES.map(t => `<button class="chip" aria-pressed="false" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('');
+  $('#chips').innerHTML = TYPES.map(t => `<button class="chip" aria-pressed="false" data-t="${esc(t)}">${EM[t]} ${esc(t)}</button>`).join('');
   $('#chips').onclick = e => { const b = e.target.closest('.chip'); if (!b) return; if (b.dataset.mine) { S.F.mine = !S.F.mine; b.setAttribute('aria-pressed', S.F.mine); return render(true); } const t = b.dataset.t; S.F.types.has(t) ? S.F.types.delete(t) : S.F.types.add(t); b.setAttribute('aria-pressed', S.F.types.has(t)); render(true); };
   let qt; $('#q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { S.F.q = e.target.value.trim(); render(true); }, 200); };
   $('#sort').onchange = e => { S.F.sort = e.target.value; render(); };
@@ -585,20 +655,24 @@ function init() {
   $('#vList').onclick = () => view(false); $('#vMap').onclick = () => view(true);
   $('#shareBtn').onclick = () => S.user ? formModal() : authModal('up');
   $('#meBtn').onclick = () => S.user ? profileModal() : authModal();
-  $('#favBtn').onclick = savedModal; $('#msgBtn').onclick = () => { loadConvos().then(inboxModal); };
-  document.addEventListener('click', e => { const h = e.target.closest('.hb'); if (h) { e.stopPropagation(); e.preventDefault(); toggleFav(h.dataset.fav); } }, true);
+  $('#msgBtn').onclick = () => { if (!S.user) return authModal(); loadConvos().then(inboxModal); };
+  $('#pageView').onclick = e => { if (e.target.closest('.hb') || e.target.closest('.tb')) return; if (e.target.closest('[data-act=share]')) return $('#shareBtn').click(); const r = e.target.closest('[data-reno]'); if (r) return openReno(r.dataset.reno); const c = e.target.closest('.card'); if (c) openReno(c.dataset.id); };
+  $('#pageView').onchange = e => { if (e.target.id === 'bkTrade') { S.bookTrade = e.target.value; renderBook(); } };
+  window.addEventListener('hashchange', route);
+  document.addEventListener('click', e => { const h = e.target.closest('.hb'); if (h) { e.stopPropagation(); e.preventDefault(); toggleFav(h.dataset.fav); return; } const tb = e.target.closest('.tb'); if (tb) { e.stopPropagation(); e.preventDefault(); toggleTradie(tb.dataset.tk, tb.dataset.ri, +tb.dataset.ti); } }, true);
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('hb')) e.target.click(); });
   $('#list').onclick = e => { if (e.target.closest('[data-act=share]')) return $('#shareBtn').click(); const c = e.target.closest('.card'); if (c) openReno(c.dataset.id); };
   $('#list').onkeydown = e => { if (e.key === 'Enter') { const c = e.target.closest('.card'); if (c && e.target === c) openReno(c.dataset.id); } };
   $('#list').onmouseover = e => { const c = e.target.closest('.card'); if (c) setSel(c.dataset.id); };
   render(true); initMap();
-  if (!configured) return;
+  if (!configured) { S.authReady = true; return; }
   loadRenos();
   sb.auth.onAuthStateChange((ev, session) => { S.user = session ? session.user : null; if (!S.user) S.profile = null; setTimeout(loadMine, 0); if (ev === 'PASSWORD_RECOVERY') setTimeout(newPasswordModal, 0); });
   const hash = location.hash, errM = hash.match(/error_description=([^&]+)/), isRecovery = /type=recovery/.test(hash), fromEmail = /access_token=|type=signup|type=magiclink/.test(hash) && !isRecovery;
   if (errM) { const em = decodeURIComponent(errM[1].replace(/\+/g, ' ')); toast(em); history.replaceState(null, '', location.pathname); if (/expired|invalid/i.test(em)) resetRequestModal(); }
   sb.auth.getSession().then(({data}) => {
     if (data.session && !S.user) { S.user = data.session.user; loadMine(); }
+    S.authReady = true; route();
     if (isRecovery && data.session) { history.replaceState(null, '', location.pathname); newPasswordModal(); }
     if (fromEmail && data.session) { toast('Email confirmed. Welcome to Renomates!'); history.replaceState(null, '', location.pathname); }
   });
