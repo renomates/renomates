@@ -159,15 +159,17 @@ const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], ht
 function loadGoogle() {
   gState = 'loading';
   // If Google rejects the key (billing, restrictions, etc.) fall back to the free map instead of showing an error box
-  window.gm_authFailure = () => { try { console.warn('Google Maps key was rejected; using OpenStreetMap instead.'); } catch (e) {}
-    gState = 'off'; gm = null; markers = {}; const el = $('#map'); el.innerHTML = ''; el.removeAttribute('style'); el.className = '';
-    if (lastDraw) drawMap(lastDraw[0], lastDraw[1]); };
+  const fallback = () => { if (gState === 'off') return; try { console.warn('Google Maps unavailable; using OpenStreetMap instead.'); } catch (e) {}
+    gState = 'off'; gm = null; markers = {}; const old = $('#map'), el = document.createElement('div'); el.id = 'map'; el.setAttribute('aria-label', 'Map of renovations'); old.replaceWith(el);
+    if (lastDraw) drawMap(lastDraw[0], lastDraw[1]); setTimeout(() => { if (map) map.invalidateSize(); }, 100); };
+  window.gm_authFailure = fallback;
+  setTimeout(() => { if (gState !== 'off' && !(gState === 'ready' && $('#map .gm-style') && !$('#map .gm-err-container')) ) fallback(); }, 6000);
   window.__gmReady = async () => {
     try {
       const {Map} = await google.maps.importLibrary('maps'); await google.maps.importLibrary('marker');
       gm = new Map($('#map'), {center: {lat: -25.3, lng: 133.8}, zoom: 4, mapId: (C.GOOGLE_MAP_ID || 'DEMO_MAP_ID'), disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false});
       gState = 'ready';
-    } catch (e) { gState = 'off'; }
+    } catch (e) { gPending = null; return fallback(); }
     if (gPending) { const p = gPending; gPending = null; drawMap(p[0], p[1]); }
   };
   const sc = document.createElement('script'); sc.async = true;
