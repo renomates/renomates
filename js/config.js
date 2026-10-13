@@ -4,5 +4,4 @@ window.RENOMATES_CONFIG = {
   SUPABASE_URL: "https://lelqzxkbpqcjrkzqiupy.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlbHF6eGticHFjanJrenFpdXB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0MjI4NDIsImV4cCI6MjEwNjk5ODg0Mn0.8lt0bwMmJ_3ee3gAFX3JfjpcL55y-qpr3Wt1PEAlwfo ", 
   GA_MEASUREMENT_ID: "G-3C3MGM8K8F",
-  GOOGLE_MAPS_KEY: "AIzaSyCgz60ik1qwnJkTPiXfP79YZZxjPQIsNDs",
 };
