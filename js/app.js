@@ -151,13 +151,17 @@ function card(d) {
 }
 let map, layer, markers = {}, firstFit = true;
 const GKEY = (C.GOOGLE_MAPS_KEY || '').trim();
-let gm, gState = GKEY ? 'idle' : 'off', gPending = null; // 'idle' | 'loading' | 'ready' | 'off'
+let gm, gState = GKEY ? 'idle' : 'off', gPending = null, lastDraw = null; // 'idle' | 'loading' | 'ready' | 'off'
 const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0; return [((h % 1000) / 1000 - .5) * .006, (((h >> 10) % 1000) / 1000 - .5) * .006]; };
 const pinHtml = (d, on) => `<div class="pin ${on ? 'on' : ''}">${EM[d.type] || '🔨'}${d.types.length > 1 ? '<small>+' + (d.types.length - 1) + '</small>' : ''}</div>`;
 const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], html: pinHtml(d, on)});
 // Google Maps (used only when GOOGLE_MAPS_KEY is set in config.js); otherwise Leaflet + OpenStreetMap
 function loadGoogle() {
   gState = 'loading';
+  // If Google rejects the key (billing, restrictions, etc.) fall back to the free map instead of showing an error box
+  window.gm_authFailure = () => { try { console.warn('Google Maps key was rejected; using OpenStreetMap instead.'); } catch (e) {}
+    gState = 'off'; gm = null; markers = {}; const el = $('#map'); el.innerHTML = ''; el.removeAttribute('style'); el.className = '';
+    if (lastDraw) drawMap(lastDraw[0], lastDraw[1]); };
   window.__gmReady = async () => {
     try {
       const {Map} = await google.maps.importLibrary('maps'); await google.maps.importLibrary('marker');
@@ -191,6 +195,7 @@ function initMap() {
   layer = L.layerGroup().addTo(map);
 }
 function drawMap(list, fit) {
+  lastDraw = [list, fit];
   if (gState === 'idle') loadGoogle();
   if (gState === 'loading') { gPending = [list, fit]; return; }
   if (gState === 'ready') return drawGoogle(list, fit);
