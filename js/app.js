@@ -150,8 +150,38 @@ function card(d) {
   return `<div class="card ${S.sel === d.id ? 'on' : ''}" data-id="${d.id}" tabindex="0" role="button"><div class="cover" style="background:${bg}">${ph ? '' : EM[d.type] || '🔨'}<i class="hb ${S.favs.has(d.id) ? 'on' : ''}" role="button" tabindex="0" aria-label="Save reno" data-fav="${d.id}">♥</i><span class="t">${esc(d.short)}</span></div><div class="cb"><h3 style="font-size:19px;line-height:1.25;margin:0 0 4px">${esc(d.title)}</h3><div class="sub">${esc(d.suburb)}, ${esc(d.state)}${d.home_type ? ' · ' + esc(d.home_type) : ''} · by ${esc(d.owner)}</div><div class="meta"><span class="tag">⏱ ${d.months} mo</span><span class="tag">🏛 ${d.council_days ? d.council_days + ' days' : 'No permit'}</span>${d.job_size ? `<span class="tag">${esc(SIZES[d.job_size])}</span>` : ''}${d.photos.length ? `<span class="tag">📷 ${d.photos.length}</span>` : ''}</div></div></div>`;
 }
 let map, layer, markers = {}, firstFit = true;
+const GKEY = (C.GOOGLE_MAPS_KEY || '').trim();
+let gm, gState = GKEY ? 'idle' : 'off', gPending = null; // 'idle' | 'loading' | 'ready' | 'off'
 const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0; return [((h % 1000) / 1000 - .5) * .006, (((h >> 10) % 1000) / 1000 - .5) * .006]; };
-const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], html: `<div class="pin ${on ? 'on' : ''}">${EM[d.type] || '🔨'}${d.types.length > 1 ? '<small>+' + (d.types.length - 1) + '</small>' : ''}</div>`});
+const pinHtml = (d, on) => `<div class="pin ${on ? 'on' : ''}">${EM[d.type] || '🔨'}${d.types.length > 1 ? '<small>+' + (d.types.length - 1) + '</small>' : ''}</div>`;
+const pinIcon = (d, on) => L.divIcon({className: 'pinwrap', iconSize: [0, 0], html: pinHtml(d, on)});
+// Google Maps (used only when GOOGLE_MAPS_KEY is set in config.js); otherwise Leaflet + OpenStreetMap
+function loadGoogle() {
+  gState = 'loading';
+  window.__gmReady = async () => {
+    try {
+      const {Map} = await google.maps.importLibrary('maps'); await google.maps.importLibrary('marker');
+      gm = new Map($('#map'), {center: {lat: -25.3, lng: 133.8}, zoom: 4, mapId: (C.GOOGLE_MAP_ID || 'DEMO_MAP_ID'), disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false});
+      gState = 'ready';
+    } catch (e) { gState = 'off'; }
+    if (gPending) { const p = gPending; gPending = null; drawMap(p[0], p[1]); }
+  };
+  const sc = document.createElement('script'); sc.async = true;
+  sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(GKEY) + '&v=weekly&loading=async&callback=__gmReady';
+  sc.onerror = () => { gState = 'off'; if (gPending) { const p = gPending; gPending = null; drawMap(p[0], p[1]); } };
+  document.head.appendChild(sc);
+}
+function drawGoogle(list, fit) {
+  Object.values(markers).forEach(m => { m.map = null; }); markers = {};
+  const bounds = new google.maps.LatLngBounds(); let n = 0;
+  list.forEach(d => { const j = jit(d.id), pos = {lat: d.lat + j[0], lng: d.lng + j[1]}; bounds.extend(pos); n++;
+    const el = document.createElement('div'); el.className = 'gpin'; el.innerHTML = pinHtml(d, S.sel === d.id);
+    const m = new google.maps.marker.AdvancedMarkerElement({map: gm, position: pos, content: el, title: d.title});
+    m.addListener('click', () => openReno(d.id)); el.addEventListener('mouseenter', () => setSel(d.id)); markers[d.id] = m; });
+  if (fit && n) { gm.fitBounds(bounds, 40); google.maps.event.addListenerOnce(gm, 'idle', () => { const mx = firstFit && n > 1 ? 13 : 14; if (gm.getZoom() > mx) gm.setZoom(mx); }); }
+  else if (fit) { gm.setCenter({lat: -25.3, lng: 133.8}); gm.setZoom(4); }
+  if (fit) firstFit = false;
+}
 function initMap() {
   if (map || typeof L === 'undefined') return;
   map = L.map('map').setView([-25.3, 133.8], 4);
@@ -161,6 +191,9 @@ function initMap() {
   layer = L.layerGroup().addTo(map);
 }
 function drawMap(list, fit) {
+  if (gState === 'idle') loadGoogle();
+  if (gState === 'loading') { gPending = [list, fit]; return; }
+  if (gState === 'ready') return drawGoogle(list, fit);
   initMap(); if (!map) return; layer.clearLayers(); markers = {};
   const pts = [];
   list.forEach(d => { const j = jit(d.id), ll = [d.lat + j[0], d.lng + j[1]]; pts.push(ll);
@@ -172,7 +205,9 @@ function drawMap(list, fit) {
 }
 function setSel(id) {
   const prev = S.sel; if (prev === id) return; S.sel = id;
-  [prev, id].forEach(x => { const d = S.renos.find(r => r.id === x); if (d && markers[x]) markers[x].setIcon(pinIcon(d, x === S.sel)); });
+  [prev, id].forEach(x => { const d = S.renos.find(r => r.id === x); if (!d || !markers[x]) return;
+    if (gState === 'ready') { const p = markers[x].content && markers[x].content.firstChild; if (p) p.classList.toggle('on', x === S.sel); markers[x].zIndex = x === S.sel ? 99 : 0; }
+    else markers[x].setIcon(pinIcon(d, x === S.sel)); });
   document.querySelectorAll('.card').forEach(c => c.classList.toggle('on', c.dataset.id === id));
 }
 function render(fit) {
@@ -341,6 +376,7 @@ function route() {
   $('#exploreView').hidden = v !== 'explore'; $('#pageView').hidden = v === 'explore';
   document.querySelectorAll('#nav .nv[data-v]').forEach(a => a.setAttribute('aria-current', a.dataset.v === v ? 'page' : 'false'));
   if (v === 'mine') renderMine(); else if (v === 'book') renderBook(); else if (v === 'saved') renderSaved();
+  else if (gState === 'ready') setTimeout(() => google.maps.event.trigger(gm, 'resize'), 60);
   else if (map) setTimeout(() => map.invalidateSize(), 60);
   if (changed) window.scrollTo(0, 0);
 }
