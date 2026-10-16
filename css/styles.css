@@ -144,3 +144,13 @@ body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
 
 /* Google Maps markers: centre the pill on its point */
 .gpin .pin{position:relative;transform:translateY(50%);cursor:pointer}.gpin:hover .pin{transform:translateY(50%) scale(1.1)}
+
+/* hero call to action + notify-me */
+.cta{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;margin-top:16px}
+.btn.big{padding:14px 24px;font-size:17px;box-shadow:0 6px 18px rgba(255,90,70,.28)}.btn.big span{font-weight:500;opacity:.9}
+.cta-note{color:var(--mute);font-size:14px}
+.notify{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px 16px;max-width:680px}
+.notify .nt{font-size:15px}.notify .nf{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.notify input{flex:1 1 170px;min-width:0;border:1px solid var(--line);border-radius:999px;padding:10px 14px;font:inherit;background:#fff}
+.notify .nm{margin:8px 0 0;font-size:12.5px;color:var(--mute)}.notify .nm.bad{color:#c0392b;font-weight:700}
+@media(max-width:600px){.btn.big{width:100%;text-align:center}}
