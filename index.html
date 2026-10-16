@@ -25,7 +25,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="css/styles.css?v=23">
+<link rel="stylesheet" href="css/styles.css?v=24">
 </head>
 <body>
 <header>
@@ -46,6 +46,15 @@
 <div class="hero">
   <h1>Renovating is easier when you’ve got mates.</h1>
   <p>Get the real story from people who’ve renovated before you — from what things cost and who to hire, to council headaches, lessons learned and what they’d do differently.</p>
+  <div class="cta">
+    <button class="btn big" id="heroShare" type="button">Share your reno <span>· takes 5 mins</span></button>
+    <span class="cta-note">Hide the cost if you like. Suburb only, never your address.</span>
+  </div>
+  <form class="notify" id="notifyForm" novalidate>
+    <div class="nt"><b>Planning a reno?</b> Get an email when a neighbour near you shares theirs.</div>
+    <div class="nf"><input id="nEmail" type="email" inputmode="email" autocomplete="email" placeholder="Your email" aria-label="Your email" required><input id="nSub" placeholder="Suburb (optional)" aria-label="Suburb" maxlength="80" autocomplete="off"><button class="btn alt" type="submit">Notify me</button></div>
+    <p class="nm" id="nMsg" role="status">We’ll only email you about renos near you. Unsubscribe any time.</p>
+  </form>
 </div>
 
 <div class="bar">
@@ -86,6 +95,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="js/config.js"></script>
-<script src="js/app.js?v=23"></script>
+<script src="js/app.js?v=24"></script>
 </body>
 </html>
