@@ -710,6 +710,18 @@ function init() {
   const view = m => { $('#main').classList.toggle('map', m); document.body.classList.toggle('mapview', m); $('#vList').setAttribute('aria-pressed', !m); $('#vMap').setAttribute('aria-pressed', m); if (m && map) setTimeout(() => { map.invalidateSize(); render(true); }, 50); };
   $('#vList').onclick = () => view(false); $('#vMap').onclick = () => view(true);
   $('#shareBtn').onclick = () => S.user ? formModal() : authModal('up');
+  $('#heroShare').onclick = () => { track('share_click', {where: 'hero'}); $('#shareBtn').click(); };
+  { const f = $('#notifyForm'), m = $('#nMsg'); let done = false; try { done = !!localStorage.getItem('rm_notify'); } catch (x) {}
+    const ok = () => { f.innerHTML = '<div class="nt"><b>You’re on the list. 🎉</b> We’ll email you when a neighbour shares a reno. Meanwhile, have a look around!</div>'; };
+    if (done) ok();
+    else f.onsubmit = async e => { e.preventDefault(); const em = $('#nEmail').value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { m.textContent = 'Please enter a valid email.'; m.className = 'nm bad'; return; }
+      if (!sb) { m.textContent = 'Not available right now.'; m.className = 'nm bad'; return; }
+      const b = f.querySelector('button'); b.disabled = true;
+      const {error} = await sb.from('waitlist').insert({email: em, suburb: $('#nSub').value.trim() || null});
+      b.disabled = false;
+      if (error && error.code !== '23505') { m.textContent = 'Could not save that. Please try again.'; m.className = 'nm bad'; return; }
+      track('notify_signup'); try { localStorage.setItem('rm_notify', '1'); } catch (x) {} ok(); }; }
   $('#meBtn').onclick = () => S.user ? profileModal() : authModal();
   $('#msgBtn').onclick = () => { if (!S.user) return authModal(); loadConvos().then(inboxModal); };
   $('#pageView').onclick = e => { if (e.target.closest('.hb') || e.target.closest('.tb')) return; if (e.target.closest('[data-act=share]')) return $('#shareBtn').click(); const r = e.target.closest('[data-reno]'); if (r) return openReno(r.dataset.reno); const c = e.target.closest('.card'); if (c) openReno(c.dataset.id); };
